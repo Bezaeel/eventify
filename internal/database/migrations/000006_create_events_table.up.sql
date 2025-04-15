@@ -1,0 +1,9 @@
+CREATE TABLE events (
+    id UUID PRIMARY KEY,
+    name VARCHAR(100) NOT NULL,
+    location VARCHAR(255),
+    date TIMESTAMP,
+    created_by UUID REFERENCES users(id),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+); 
