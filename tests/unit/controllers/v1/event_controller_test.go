@@ -2,11 +2,13 @@ package controllers_test
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	controllers "eventify/internal/api/controllers/v1"
 	"eventify/internal/auth"
 	"eventify/internal/domain"
 	service_mocks "eventify/internal/service/mocks"
+	"eventify/pkg/logger"
 	"net/http/httptest"
 	"testing"
 	"time"
@@ -44,11 +46,12 @@ func setupTest(t *testing.T) (*controllers.EventController, *service_mocks.MockI
 	ctrl := gomock.NewController(t)
 	mockService := service_mocks.NewMockIEventService(ctrl)
 	app := fiber.New()
+	log := logger.New(true)
 
 	// Create a JWT provider for testing
 	jwtProvider := auth.NewJWTProvider("test-secret-key", 1, "test-issuer", "test-audience")
 
-	eventController := controllers.NewEventController(app, mockService, jwtProvider)
+	eventController := controllers.NewEventController(app, mockService, jwtProvider, log)
 	eventController.RegisterRoutes()
 
 	return eventController, mockService, app, jwtProvider
@@ -81,7 +84,7 @@ func TestGetAllEvents(t *testing.T) {
 
 	// Set up expectations
 	mockService.EXPECT().
-		GetAllEvents().
+		GetAllEvents(context.Background()).
 		Return(events)
 
 	// Create test request
@@ -120,7 +123,7 @@ func TestGetEventById(t *testing.T) {
 
 	// Set up expectations
 	mockService.EXPECT().
-		GetEventById(eventId).
+		GetEventById(eventId, context.Background()).
 		Return(event)
 
 	// Create test request
@@ -156,7 +159,7 @@ func TestCreateEvent(t *testing.T) {
 
 	// Set up expectations
 	mockService.EXPECT().
-		CreateEvent(gomock.Any()).
+		CreateEvent(gomock.Any(), gomock.Any()).
 		Return(nil)
 
 	// Create request body
@@ -194,7 +197,7 @@ func TestUpdateEvent(t *testing.T) {
 
 	// Set up expectations
 	mockService.EXPECT().
-		UpdateEvent(gomock.Any()).
+		UpdateEvent(gomock.Any(), context.Background()).
 		Return(nil)
 
 	// Create request body
@@ -225,7 +228,7 @@ func TestDeleteEvent(t *testing.T) {
 
 	// Set up expectations
 	mockService.EXPECT().
-		DeleteEvent(eventId).
+		DeleteEvent(eventId, context.Background()).
 		Return(nil)
 
 	// Create test request
@@ -252,7 +255,7 @@ func TestGetEventByIdNotFound(t *testing.T) {
 
 	// Set up expectations for not found case
 	mockService.EXPECT().
-		GetEventById(eventId).
+		GetEventById(eventId, context.Background()).
 		Return(nil)
 
 	// Create test request

@@ -2,6 +2,7 @@ package middlewares
 
 import (
 	"eventify/internal/auth"
+	"fmt"
 	"strings"
 
 	"github.com/gofiber/fiber/v2"
@@ -63,5 +64,18 @@ func HasPermission(permission []string) fiber.Handler {
 		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
 			"message": "Forbidden: insufficient permissions",
 		})
+	}
+}
+
+func AnotherMiddleware() fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		// request header should contain a specific key
+		fmt.Println("AnotherMiddleware called")
+		if c.Get("X-Another-Header") == "" {
+			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+				"message": "X-Another-Header is required",
+			})
+		}
+		return c.Next()
 	}
 }

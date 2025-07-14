@@ -1,7 +1,6 @@
 package main
 
 import (
-	_ "eventify/docs"
 	"eventify/internal/api/controllers/v1"
 	adminControllers "eventify/internal/api/controllers/v1/admin"
 	"eventify/internal/auth"
@@ -11,7 +10,7 @@ import (
 	"eventify/pkg/logger"
 	"os"
 
-	"github.com/gofiber/swagger"
+	scalar "github.com/oSethoum/fiber-scalar"
 )
 
 // @title Eventify API
@@ -64,7 +63,7 @@ func main() {
 	app := apiHttpServer.App()
 
 	// Initialize repositories
-	eventRepository := service.NewEventService(db)
+	eventService := service.NewEventService(db, log)
 	userService := service.NewUserService(db)
 	roleService := service.NewRoleService(db)
 	permissionService := service.NewPermissionService(db)
@@ -73,7 +72,7 @@ func main() {
 	authController := controllers.NewAuthController(app, userService, jwtProvider, permissionService, log)
 	authController.RegisterRoutes()
 
-	eventController := controllers.NewEventController(app, eventRepository, jwtProvider)
+	eventController := controllers.NewEventController(app, eventService, jwtProvider, log)
 	eventController.RegisterRoutes()
 
 	// Initialize password controller
@@ -85,7 +84,14 @@ func main() {
 	adminController.RegisterRoutes()
 
 	// Add Swagger handler
-	app.Get("/swagger/*", swagger.HandlerDefault)
+	app.Get("/docs", scalar.Handler(&scalar.Options{
+						SpecURL: "../docs/swagger.json",
+            SpecFile: "../docs/swagger.json",
+            Layout:   scalar.LayoutClassic,
+            Theme:    scalar.ThemeSolarized,
+            DarkMode: true,
+            // other options can go here
+        }))
 
 	// Start the server
 	app.Listen(":3000")

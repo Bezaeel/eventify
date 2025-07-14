@@ -82,6 +82,7 @@ func (ac *AuthController) RegisterRoutes() {
 // Login godoc
 // @Summary User login
 // @Description Authenticate a user and return a JWT token
+// @xtags v2
 // @Tags auth
 // @Accept json
 // @Produce json

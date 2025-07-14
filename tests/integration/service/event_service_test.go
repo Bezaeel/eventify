@@ -1,8 +1,10 @@
 package service_test
 
 import (
+	"context"
 	"eventify/internal/domain"
 	"eventify/internal/service"
+	"eventify/pkg/logger"
 	"testing"
 	"time"
 
@@ -14,6 +16,7 @@ import (
 type EventServiceIntegrationTestSuite struct {
 	suite.Suite
 	db        *gorm.DB
+	logger    *logger.Logger
 	cleanUp   func()
 	service   *service.EventService
 	testUser  *domain.User
@@ -29,7 +32,8 @@ func (s *EventServiceIntegrationTestSuite) SetupSuite() {
 	db, cleanUp := baseIntegrationTest(s.T())
 	s.db = db
 	s.cleanUp = cleanUp
-	s.service = service.NewEventService(s.db)
+	s.logger = logger.New(true)
+	s.service = service.NewEventService(s.db, s.logger)
 }
 
 func (s *EventServiceIntegrationTestSuite) TearDownSuite() {
@@ -46,7 +50,7 @@ func (s *EventServiceIntegrationTestSuite) SetupTest() {
 		FirstName: "Test",
 		LastName:  "User",
 		CreatedAt: time.Now(),
-		UpdatedAt: time.Now(),
+		UpdatedAt: nil,
 	}
 }
 
@@ -65,10 +69,10 @@ func (s *EventServiceIntegrationTestSuite) TestCreateEvent() {
 		Location:  "Test Location",
 		CreatedBy: uuid.New(),
 		CreatedAt: time.Now(),
-		UpdatedAt: time.Now(),
+		UpdatedAt: nil,
 		Creator:   *s.testUser,
 	}
-	err := s.service.CreateEvent(testEvent)
+	err := s.service.CreateEvent(testEvent, context.Background())
 	s.NoError(err)
 }
 
@@ -81,7 +85,7 @@ func (s *EventServiceIntegrationTestSuite) TestGetEventById() {
 		Location:  "Test Location",
 		CreatedBy: uuid.New(),
 		CreatedAt: time.Now(),
-		UpdatedAt: time.Now(),
+		UpdatedAt: nil,
 		Creator:   *s.testUser,
 	}
 	err := s.db.Create(s.testUser) // Ensure the user is created first
@@ -90,7 +94,7 @@ func (s *EventServiceIntegrationTestSuite) TestGetEventById() {
 	s.NoError(err.Error)
 
 	// Then test getting it
-	event := s.service.GetEventById(testEvent.Id)
+	event := s.service.GetEventById(testEvent.Id, context.Background())
 	s.NotNil(event)
 	s.Equal(testEvent.Id, event.Id)
 	s.Equal(testEvent.Name, event.Name)
@@ -107,7 +111,7 @@ func (s *EventServiceIntegrationTestSuite) TestGetAllEvents() {
 			Location:  "Test Location",
 			CreatedBy: uuid.New(),
 			CreatedAt: time.Now(),
-			UpdatedAt: time.Now(),
+			UpdatedAt: nil,
 			Creator:   *s.testUser,
 		},
 		{
@@ -117,7 +121,7 @@ func (s *EventServiceIntegrationTestSuite) TestGetAllEvents() {
 			Location:  "Another Test Location",
 			CreatedBy: uuid.New(),
 			CreatedAt: time.Now(),
-			UpdatedAt: time.Now(),
+			UpdatedAt: nil,
 			Creator:   *s.testUser,
 		},
 	}
@@ -126,7 +130,7 @@ func (s *EventServiceIntegrationTestSuite) TestGetAllEvents() {
 	err := s.db.Create(testEvents)
 	s.NoError(err.Error)
 
-	events := s.service.GetAllEvents()
+	events := s.service.GetAllEvents(context.Background())
 	s.NotNil(events)
 	s.Equal(len(testEvents), len(events))
 	for _, testEvent := range testEvents {
@@ -150,13 +154,14 @@ func (s *EventServiceIntegrationTestSuite) TestUpdateEvent() {
 		Location:  "Test Location",
 		CreatedBy: uuid.New(),
 		CreatedAt: time.Now(),
-		UpdatedAt: time.Now(),
+		UpdatedAt: nil,
 		Creator:   *s.testUser,
 	}
 
 	s.db.Create(s.testUser) // Ensure the user is created first
 	s.db.Create(initialEvent)
 
+	now := time.Now().UTC()
 	updatedEvent := &domain.Event{
 		Id:        initialEvent.Id,
 		Name:      "Updated Event Name",
@@ -164,11 +169,11 @@ func (s *EventServiceIntegrationTestSuite) TestUpdateEvent() {
 		Location:  "Test Location",
 		CreatedBy: initialEvent.Creator.ID,
 		CreatedAt: initialEvent.CreatedAt,
-		UpdatedAt: time.Now(),
+		UpdatedAt: &now,
 		Creator:   initialEvent.Creator,
 	}
 
-	s.service.UpdateEvent(updatedEvent)
+	s.service.UpdateEvent(updatedEvent, context.Background())
 
 	// Verify update
 	var actual domain.Event
@@ -188,14 +193,14 @@ func (s *EventServiceIntegrationTestSuite) TestDeleteEvent() {
 		Location:  "Test Location",
 		CreatedBy: uuid.New(),
 		CreatedAt: time.Now(),
-		UpdatedAt: time.Now(),
+		UpdatedAt: nil,
 		Creator:   *s.testUser,
 	}
 
 	s.db.Create(s.testUser) // Ensure the user is created first
 	s.db.Create(event)
 
-	s.service.DeleteEvent(event.Id)
+	s.service.DeleteEvent(event.Id, context.Background())
 
 	// Verify update
 	var actual domain.Event

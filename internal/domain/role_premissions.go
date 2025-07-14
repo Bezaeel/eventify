@@ -12,5 +12,5 @@ type RolePermissions struct {
 	Role         Role       `json:"role" gorm:"foreignKey:RoleId;references:Id"`
 	Permission   Permission `json:"permission" gorm:"foreignKey:PermissionId;references:Id"`
 	CreatedAt    time.Time  `json:"created_at" gorm:"column:created_at"`
-	UpdatedAt    time.Time  `json:"updated_at" gorm:"column:updated_at"`
+	UpdatedAt    *time.Time  `json:"updated_at" gorm:"column:updated_at"`
 }

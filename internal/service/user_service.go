@@ -41,7 +41,7 @@ func (ur *UserService) Create(user *domain.User) error {
 
 	now := time.Now()
 	user.CreatedAt = now
-	user.UpdatedAt = now
+	user.UpdatedAt = &now
 
 	// Use GORM's Exec method for raw SQL
 	err = ur.db.Exec(
@@ -86,9 +86,9 @@ func (ur *UserService) GetByEmail(email string) (*domain.User, error) {
 
 	return user, nil
 }
-
 func (ur *UserService) Update(user *domain.User) error {
-	user.UpdatedAt = time.Now()
+	now := time.Now()
+	user.UpdatedAt = &now
 
 	// Use GORM's Exec method for raw SQL
 	err := ur.db.Exec(

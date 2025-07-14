@@ -12,7 +12,7 @@ DB_NAME ?= eventify
 
 # Go parameters
 BINARY_NAME=eventify
-MAIN_FILE=cmd/main.go
+MAIN_FILE= cmd/main.go
 MIGRATION_DIR=internal/database/migrations
 
 # Tools
@@ -29,7 +29,7 @@ all: clean swagger mock test run
 # Run the application
 run:
 	@echo "Running application..."
-	go run $(MAIN_FILE)
+	cd cmd && go run .
 
 # Run all tests (unit + integration)
 test: test-unit test-integration
@@ -74,7 +74,8 @@ mock:
 # Generate Swagger documentation
 swagger:
 	@echo "Generating Swagger documentation..."
-	$(SWAG) init -g $(MAIN_FILE) -o docs
+	$(SWAG) init -g $(MAIN_FILE) -o docs && \
+	go run docs/scripts/add_xtags.go
 
 # Create a new migration
 migrate-create:
@@ -141,4 +142,4 @@ help:
 	@echo "  make clean                  - Clean build artifacts"
 	@echo "  make build                  - Build the application"
 	@echo "  make config                 - Show current configuration"
-	@echo "  make all                    - Run clean, swagger, mock, test, and run" 
+	@echo "  make all                    - Run clean, swagger, mock, test, and run"

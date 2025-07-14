@@ -12,5 +12,5 @@ type UserRole struct {
 	User      User      `json:"user" gorm:"foreignKey:UserId;references:ID"`
 	Role      Role      `json:"role" gorm:"foreignKey:RoleId;references:Id"`
 	CreatedAt time.Time `json:"created_at" gorm:"column:created_at"`
-	UpdatedAt time.Time `json:"updated_at" gorm:"column:updated_at"`
+	UpdatedAt *time.Time `json:"updated_at" gorm:"column:updated_at"`
 }

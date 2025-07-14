@@ -54,7 +54,7 @@ func (r *RoleService) Create(role *domain.Role) error {
 
 	now := time.Now()
 	role.CreatedAt = now
-	role.UpdatedAt = now
+	role.UpdatedAt = &now
 
 	if err := r.db.Create(role).Error; err != nil {
 		return err

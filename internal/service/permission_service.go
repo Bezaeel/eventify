@@ -59,7 +59,7 @@ func (p *PermissionService) Create(permission *domain.Permission) error {
 
 	now := time.Now()
 	permission.CreatedAt = now
-	permission.UpdatedAt = now
+	permission.UpdatedAt = &now
 
 	if err := p.db.Create(permission).Error; err != nil {
 		return err

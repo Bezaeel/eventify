@@ -53,14 +53,14 @@ func TestGetAllRoles(t *testing.T) {
 			Name:        "Admin",
 			Description: "Administrator role",
 			CreatedAt:   time.Now(),
-			UpdatedAt:   time.Now(),
+			UpdatedAt:   nil,
 		},
 		{
 			Id:          uuid.New(),
 			Name:        "User",
 			Description: "Regular user role",
 			CreatedAt:   time.Now(),
-			UpdatedAt:   time.Now(),
+			UpdatedAt:   nil,
 		},
 	}
 

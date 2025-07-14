@@ -14,7 +14,7 @@ type User struct {
 	FirstName string    `json:"first_name" gorm:"column:first_name"`
 	LastName  string    `json:"last_name" gorm:"column:last_name"`
 	CreatedAt time.Time `json:"created_at" gorm:"column:created_at"`
-	UpdatedAt time.Time `json:"updated_at" gorm:"column:updated_at"`
+	UpdatedAt *time.Time `json:"updated_at" gorm:"column:updated_at"`
 	// Add UserRoles navigation property
 	UserRoles []UserRole `json:"user_roles,omitempty" gorm:"foreignKey:UserId;references:ID"`
 }

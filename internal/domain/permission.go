@@ -12,7 +12,7 @@ type Permission struct {
 	Description     string            `json:"description" gorm:"column:description"`
 	RolePermissions []RolePermissions `json:"role_permissions" gorm:"foreignKey:PermissionId;references:Id"`
 	CreatedAt       time.Time         `json:"created_at" gorm:"column:created_at"`
-	UpdatedAt       time.Time         `json:"updated_at" gorm:"column:updated_at"`
+	UpdatedAt       *time.Time         `json:"updated_at" gorm:"column:updated_at"`
 }
 
 type IPermissionService interface {
