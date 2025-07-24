@@ -1,9 +1,10 @@
 package controllers
 
 import (
-	"eventify/internal/api/middlewares"
+	"eventify/api/middlewares"
 	"eventify/internal/auth"
 	"eventify/internal/service"
+	"eventify/pkg"
 
 	"github.com/gofiber/fiber/v2"
 	"golang.org/x/crypto/bcrypt"
@@ -63,13 +64,13 @@ type SuccessResponse struct {
 // @Produce json
 // @Param request body ForgotPasswordRequest true "Email for password reset"
 // @Success 200 {object} SuccessResponse
-// @Failure 400 {object} ErrorResponse
-// @Failure 404 {object} ErrorResponse
+// @Failure 400 {object} pkg.ErrorResponse
+// @Failure 404 {object} pkg.ErrorResponse
 // @Router /api/v1/password/forgot [post]
 func (pc *PasswordController) ForgotPassword(c *fiber.Ctx) error {
 	var request ForgotPasswordRequest
 	if err := c.BodyParser(&request); err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(ErrorResponse{
+		return c.Status(fiber.StatusBadRequest).JSON(pkg.ErrorResponse{
 			Message: "Invalid request",
 		})
 	}
@@ -86,7 +87,7 @@ func (pc *PasswordController) ForgotPassword(c *fiber.Ctx) error {
 	// Generate a password reset token
 	resetToken, err := pc.jwtProvider.GenerateToken(user, []string{"password.reset"})
 	if err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(ErrorResponse{
+		return c.Status(fiber.StatusInternalServerError).JSON(pkg.ErrorResponse{
 			Message: "Error generating reset token",
 		})
 	}
@@ -107,13 +108,13 @@ func (pc *PasswordController) ForgotPassword(c *fiber.Ctx) error {
 // @Produce json
 // @Param request body ResetPasswordRequest true "Reset token and new password"
 // @Success 200 {object} SuccessResponse
-// @Failure 400 {object} ErrorResponse
-// @Failure 401 {object} ErrorResponse
+// @Failure 400 {object} pkg.ErrorResponse
+// @Failure 401 {object} pkg.ErrorResponse
 // @Router /api/v1/password/reset [post]
 func (pc *PasswordController) ResetPassword(c *fiber.Ctx) error {
 	var request ResetPasswordRequest
 	if err := c.BodyParser(&request); err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(ErrorResponse{
+		return c.Status(fiber.StatusBadRequest).JSON(pkg.ErrorResponse{
 			Message: "Invalid request",
 		})
 	}
@@ -121,7 +122,7 @@ func (pc *PasswordController) ResetPassword(c *fiber.Ctx) error {
 	// Validate token
 	claims, err := pc.jwtProvider.ValidateToken(request.Token)
 	if err != nil {
-		return c.Status(fiber.StatusUnauthorized).JSON(ErrorResponse{
+		return c.Status(fiber.StatusUnauthorized).JSON(pkg.ErrorResponse{
 			Message: "Invalid or expired token",
 		})
 	}
@@ -136,7 +137,7 @@ func (pc *PasswordController) ResetPassword(c *fiber.Ctx) error {
 	}
 
 	if !hasPermission {
-		return c.Status(fiber.StatusUnauthorized).JSON(ErrorResponse{
+		return c.Status(fiber.StatusUnauthorized).JSON(pkg.ErrorResponse{
 			Message: "Invalid token type",
 		})
 	}
@@ -144,7 +145,7 @@ func (pc *PasswordController) ResetPassword(c *fiber.Ctx) error {
 	// Update password
 	err = pc.UserService.UpdatePassword(claims.UserID, request.Password)
 	if err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(ErrorResponse{
+		return c.Status(fiber.StatusInternalServerError).JSON(pkg.ErrorResponse{
 			Message: "Error updating password",
 		})
 	}
@@ -163,13 +164,13 @@ func (pc *PasswordController) ResetPassword(c *fiber.Ctx) error {
 // @Security BearerAuth
 // @Param request body ChangePasswordRequest true "Current and new password"
 // @Success 200 {object} SuccessResponse
-// @Failure 400 {object} ErrorResponse
-// @Failure 401 {object} ErrorResponse
+// @Failure 400 {object} pkg.ErrorResponse
+// @Failure 401 {object} pkg.ErrorResponse
 // @Router /api/v1/password/change [post]
 func (pc *PasswordController) ChangePassword(c *fiber.Ctx) error {
 	var request ChangePasswordRequest
 	if err := c.BodyParser(&request); err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(ErrorResponse{
+		return c.Status(fiber.StatusBadRequest).JSON(pkg.ErrorResponse{
 			Message: "Invalid request",
 		})
 	}
@@ -177,7 +178,7 @@ func (pc *PasswordController) ChangePassword(c *fiber.Ctx) error {
 	// Get user from JWT claims
 	claims, ok := c.Locals("claims").(*auth.CustomClaims)
 	if !ok {
-		return c.Status(fiber.StatusUnauthorized).JSON(ErrorResponse{
+		return c.Status(fiber.StatusUnauthorized).JSON(pkg.ErrorResponse{
 			Message: "Authentication required",
 		})
 	}
@@ -185,7 +186,7 @@ func (pc *PasswordController) ChangePassword(c *fiber.Ctx) error {
 	// Get user from database
 	user, err := pc.UserService.GetByID(claims.UserID)
 	if err != nil {
-		return c.Status(fiber.StatusUnauthorized).JSON(ErrorResponse{
+		return c.Status(fiber.StatusUnauthorized).JSON(pkg.ErrorResponse{
 			Message: "User not found",
 		})
 	}
@@ -193,7 +194,7 @@ func (pc *PasswordController) ChangePassword(c *fiber.Ctx) error {
 	// Verify current password
 	err = bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(request.CurrentPassword))
 	if err != nil {
-		return c.Status(fiber.StatusUnauthorized).JSON(ErrorResponse{
+		return c.Status(fiber.StatusUnauthorized).JSON(pkg.ErrorResponse{
 			Message: "Current password is incorrect",
 		})
 	}
@@ -201,7 +202,7 @@ func (pc *PasswordController) ChangePassword(c *fiber.Ctx) error {
 	// Update password
 	err = pc.UserService.UpdatePassword(user.ID, request.NewPassword)
 	if err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(ErrorResponse{
+		return c.Status(fiber.StatusInternalServerError).JSON(pkg.ErrorResponse{
 			Message: "Error updating password",
 		})
 	}

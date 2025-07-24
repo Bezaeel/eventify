@@ -1,7 +1,7 @@
 package controllers
 
 import (
-	"eventify/internal/api/middlewares"
+	"eventify/api/middlewares"
 	"eventify/internal/auth"
 	"eventify/internal/constants"
 	"eventify/internal/service"

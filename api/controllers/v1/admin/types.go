@@ -31,11 +31,3 @@ type SuccessResponse struct {
 	// Success message
 	Message string `json:"message" example:"Operation completed successfully"`
 }
-
-// @Description Error response
-type ErrorResponse struct {
-	// Error message
-	Message string `json:"message" example:"An error occurred"`
-	// Detailed error information (optional)
-	Error string `json:"error,omitempty" example:"Invalid input: field 'name' is required"`
-}

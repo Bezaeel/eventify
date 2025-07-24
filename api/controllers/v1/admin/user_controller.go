@@ -1,6 +1,8 @@
 package controllers
 
 import (
+	"eventify/pkg"
+
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
 )
@@ -22,15 +24,15 @@ func (ac *AdminController) registerUserRoutes(adminMiddleware fiber.Handler) {
 // @Security BearerAuth
 // @Param request body AssignRoleRequest true "Role assignment request"
 // @Success 200 {object} SuccessResponse
-// @Failure 400 {object} ErrorResponse "Invalid request or user/role not found"
-// @Failure 401 {object} ErrorResponse "Unauthorized"
-// @Failure 403 {object} ErrorResponse "Forbidden"
-// @Failure 500 {object} ErrorResponse "Internal Server Error"
+// @Failure 400 {object} pkg.ErrorResponse "Invalid request or user/role not found"
+// @Failure 401 {object} pkg.ErrorResponse "Unauthorized"
+// @Failure 403 {object} pkg.ErrorResponse "Forbidden"
+// @Failure 500 {object} pkg.ErrorResponse "Internal Server Error"
 // @Router /api/v1/admin/assign-role [post]
 func (ac *AdminController) AssignRoleToUser(c *fiber.Ctx) error {
 	request := new(AssignRoleRequest)
 	if err := c.BodyParser(request); err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(ErrorResponse{
+		return c.Status(fiber.StatusBadRequest).JSON(pkg.ErrorResponse{
 			Message: "Invalid request body",
 			Error:   err.Error(),
 		})
@@ -38,14 +40,14 @@ func (ac *AdminController) AssignRoleToUser(c *fiber.Ctx) error {
 
 	userID, err := uuid.Parse(request.UserID)
 	if err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(ErrorResponse{
+		return c.Status(fiber.StatusBadRequest).JSON(pkg.ErrorResponse{
 			Message: "Invalid user ID",
 		})
 	}
 
 	roleID, err := uuid.Parse(request.RoleID)
 	if err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(ErrorResponse{
+		return c.Status(fiber.StatusBadRequest).JSON(pkg.ErrorResponse{
 			Message: "Invalid role ID",
 		})
 	}
@@ -53,20 +55,20 @@ func (ac *AdminController) AssignRoleToUser(c *fiber.Ctx) error {
 	// Verify that both user and role exist
 	_, err = ac.UserService.GetByID(userID)
 	if err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(ErrorResponse{
+		return c.Status(fiber.StatusBadRequest).JSON(pkg.ErrorResponse{
 			Message: "User not found",
 		})
 	}
 
 	_, err = ac.RoleService.GetByID(roleID)
 	if err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(ErrorResponse{
+		return c.Status(fiber.StatusBadRequest).JSON(pkg.ErrorResponse{
 			Message: "Role not found",
 		})
 	}
 
 	if err := ac.RoleService.AssignRoleToUser(userID, roleID); err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(ErrorResponse{
+		return c.Status(fiber.StatusInternalServerError).JSON(pkg.ErrorResponse{
 			Message: "Error assigning role to user",
 			Error:   err.Error(),
 		})
@@ -86,15 +88,15 @@ func (ac *AdminController) AssignRoleToUser(c *fiber.Ctx) error {
 // @Security BearerAuth
 // @Param request body AssignRoleRequest true "Role removal request"
 // @Success 200 {object} SuccessResponse
-// @Failure 400 {object} ErrorResponse "Invalid request"
-// @Failure 401 {object} ErrorResponse "Unauthorized"
-// @Failure 403 {object} ErrorResponse "Forbidden"
-// @Failure 500 {object} ErrorResponse "Internal Server Error"
+// @Failure 400 {object} pkg.ErrorResponse "Invalid request"
+// @Failure 401 {object} pkg.ErrorResponse "Unauthorized"
+// @Failure 403 {object} pkg.ErrorResponse "Forbidden"
+// @Failure 500 {object} pkg.ErrorResponse "Internal Server Error"
 // @Router /api/v1/admin/remove-role [delete]
 func (ac *AdminController) RemoveRoleFromUser(c *fiber.Ctx) error {
 	request := new(AssignRoleRequest)
 	if err := c.BodyParser(request); err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(ErrorResponse{
+		return c.Status(fiber.StatusBadRequest).JSON(pkg.ErrorResponse{
 			Message: "Invalid request body",
 			Error:   err.Error(),
 		})
@@ -102,20 +104,20 @@ func (ac *AdminController) RemoveRoleFromUser(c *fiber.Ctx) error {
 
 	userID, err := uuid.Parse(request.UserID)
 	if err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(ErrorResponse{
+		return c.Status(fiber.StatusBadRequest).JSON(pkg.ErrorResponse{
 			Message: "Invalid user ID",
 		})
 	}
 
 	roleID, err := uuid.Parse(request.RoleID)
 	if err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(ErrorResponse{
+		return c.Status(fiber.StatusBadRequest).JSON(pkg.ErrorResponse{
 			Message: "Invalid role ID",
 		})
 	}
 
 	if err := ac.RoleService.RemoveRoleFromUser(userID, roleID); err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(ErrorResponse{
+		return c.Status(fiber.StatusInternalServerError).JSON(pkg.ErrorResponse{
 			Message: "Error removing role from user",
 			Error:   err.Error(),
 		})
@@ -135,16 +137,16 @@ func (ac *AdminController) RemoveRoleFromUser(c *fiber.Ctx) error {
 // @Security BearerAuth
 // @Param id path string true "User ID" format(uuid)
 // @Success 200 {array} domain.Role
-// @Failure 400 {object} ErrorResponse "Invalid user ID or user not found"
-// @Failure 401 {object} ErrorResponse "Unauthorized"
-// @Failure 403 {object} ErrorResponse "Forbidden"
-// @Failure 500 {object} ErrorResponse "Internal Server Error"
+// @Failure 400 {object} pkg.ErrorResponse "Invalid user ID or user not found"
+// @Failure 401 {object} pkg.ErrorResponse "Unauthorized"
+// @Failure 403 {object} pkg.ErrorResponse "Forbidden"
+// @Failure 500 {object} pkg.ErrorResponse "Internal Server Error"
 // @Router /api/v1/admin/users/{id}/roles [get]
 func (ac *AdminController) GetUserRoles(c *fiber.Ctx) error {
 	id := c.Params("id")
 	userID, err := uuid.Parse(id)
 	if err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(ErrorResponse{
+		return c.Status(fiber.StatusBadRequest).JSON(pkg.ErrorResponse{
 			Message: "Invalid user ID",
 		})
 	}
@@ -152,14 +154,14 @@ func (ac *AdminController) GetUserRoles(c *fiber.Ctx) error {
 	// Verify that user exists
 	_, err = ac.UserService.GetByID(userID)
 	if err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(ErrorResponse{
+		return c.Status(fiber.StatusBadRequest).JSON(pkg.ErrorResponse{
 			Message: "User not found",
 		})
 	}
 
 	roles, err := ac.RoleService.GetUserRoles(userID)
 	if err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(ErrorResponse{
+		return c.Status(fiber.StatusInternalServerError).JSON(pkg.ErrorResponse{
 			Message: "Error fetching user roles",
 			Error:   err.Error(),
 		})

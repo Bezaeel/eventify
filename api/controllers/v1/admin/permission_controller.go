@@ -1,6 +1,8 @@
 package controllers
 
 import (
+	"eventify/pkg"
+
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
 )
@@ -21,14 +23,14 @@ func (ac *AdminController) registerPermissionRoutes(adminMiddleware fiber.Handle
 // @Produce json
 // @Security BearerAuth
 // @Success 200 {array} domain.Permission
-// @Failure 401 {object} ErrorResponse "Unauthorized"
-// @Failure 403 {object} ErrorResponse "Forbidden"
-// @Failure 500 {object} ErrorResponse "Internal Server Error"
+// @Failure 401 {object} pkg.ErrorResponse "Unauthorized"
+// @Failure 403 {object} pkg.ErrorResponse "Forbidden"
+// @Failure 500 {object} pkg.ErrorResponse "Internal Server Error"
 // @Router /api/v1/admin/permissions [get]
 func (ac *AdminController) GetAllPermissions(c *fiber.Ctx) error {
 	permissions, err := ac.PermissionService.GetAll()
 	if err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(ErrorResponse{
+		return c.Status(fiber.StatusInternalServerError).JSON(pkg.ErrorResponse{
 			Message: "Error fetching permissions",
 			Error:   err.Error(),
 		})
@@ -45,15 +47,15 @@ func (ac *AdminController) GetAllPermissions(c *fiber.Ctx) error {
 // @Security BearerAuth
 // @Param request body AssignPermissionRequest true "Permission assignment request"
 // @Success 200 {object} SuccessResponse
-// @Failure 400 {object} ErrorResponse "Invalid request"
-// @Failure 401 {object} ErrorResponse "Unauthorized"
-// @Failure 403 {object} ErrorResponse "Forbidden"
-// @Failure 500 {object} ErrorResponse "Internal Server Error"
+// @Failure 400 {object} pkg.ErrorResponse "Invalid request"
+// @Failure 401 {object} pkg.ErrorResponse "Unauthorized"
+// @Failure 403 {object} pkg.ErrorResponse "Forbidden"
+// @Failure 500 {object} pkg.ErrorResponse "Internal Server Error"
 // @Router /api/v1/admin/assign-permission [post]
 func (ac *AdminController) AssignPermissionToRole(c *fiber.Ctx) error {
 	request := new(AssignPermissionRequest)
 	if err := c.BodyParser(request); err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(ErrorResponse{
+		return c.Status(fiber.StatusBadRequest).JSON(pkg.ErrorResponse{
 			Message: "Invalid request body",
 			Error:   err.Error(),
 		})
@@ -61,20 +63,20 @@ func (ac *AdminController) AssignPermissionToRole(c *fiber.Ctx) error {
 
 	roleID, err := uuid.Parse(request.RoleID)
 	if err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(ErrorResponse{
+		return c.Status(fiber.StatusBadRequest).JSON(pkg.ErrorResponse{
 			Message: "Invalid role ID",
 		})
 	}
 
 	permissionID, err := uuid.Parse(request.PermissionID)
 	if err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(ErrorResponse{
+		return c.Status(fiber.StatusBadRequest).JSON(pkg.ErrorResponse{
 			Message: "Invalid permission ID",
 		})
 	}
 
 	if err := ac.PermissionService.AssignPermissionToRole(roleID, permissionID); err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(ErrorResponse{
+		return c.Status(fiber.StatusInternalServerError).JSON(pkg.ErrorResponse{
 			Message: "Error assigning permission to role",
 			Error:   err.Error(),
 		})
@@ -94,15 +96,15 @@ func (ac *AdminController) AssignPermissionToRole(c *fiber.Ctx) error {
 // @Security BearerAuth
 // @Param request body AssignPermissionRequest true "Permission removal request"
 // @Success 200 {object} SuccessResponse
-// @Failure 400 {object} ErrorResponse "Invalid request"
-// @Failure 401 {object} ErrorResponse "Unauthorized"
-// @Failure 403 {object} ErrorResponse "Forbidden"
-// @Failure 500 {object} ErrorResponse "Internal Server Error"
+// @Failure 400 {object} pkg.ErrorResponse "Invalid request"
+// @Failure 401 {object} pkg.ErrorResponse "Unauthorized"
+// @Failure 403 {object} pkg.ErrorResponse "Forbidden"
+// @Failure 500 {object} pkg.ErrorResponse "Internal Server Error"
 // @Router /api/v1/admin/remove-permission [delete]
 func (ac *AdminController) RemovePermissionFromRole(c *fiber.Ctx) error {
 	request := new(AssignPermissionRequest)
 	if err := c.BodyParser(request); err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(ErrorResponse{
+		return c.Status(fiber.StatusBadRequest).JSON(pkg.ErrorResponse{
 			Message: "Invalid request body",
 			Error:   err.Error(),
 		})
@@ -110,20 +112,20 @@ func (ac *AdminController) RemovePermissionFromRole(c *fiber.Ctx) error {
 
 	roleID, err := uuid.Parse(request.RoleID)
 	if err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(ErrorResponse{
+		return c.Status(fiber.StatusBadRequest).JSON(pkg.ErrorResponse{
 			Message: "Invalid role ID",
 		})
 	}
 
 	permissionID, err := uuid.Parse(request.PermissionID)
 	if err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(ErrorResponse{
+		return c.Status(fiber.StatusBadRequest).JSON(pkg.ErrorResponse{
 			Message: "Invalid permission ID",
 		})
 	}
 
 	if err := ac.PermissionService.RemovePermissionFromRole(roleID, permissionID); err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(ErrorResponse{
+		return c.Status(fiber.StatusInternalServerError).JSON(pkg.ErrorResponse{
 			Message: "Error removing permission from role",
 			Error:   err.Error(),
 		})

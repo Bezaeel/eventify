@@ -1,8 +1,9 @@
 package main
 
 import (
-	"eventify/internal/api/controllers/v1"
-	adminControllers "eventify/internal/api/controllers/v1/admin"
+	"eventify/api/controllers/v1"
+	"eventify/api/controllers/events"
+	adminControllers "eventify/api/controllers/v1/admin"
 	"eventify/internal/auth"
 	"eventify/internal/config"
 	"eventify/internal/service"
@@ -72,8 +73,7 @@ func main() {
 	authController := controllers.NewAuthController(app, userService, jwtProvider, permissionService, log)
 	authController.RegisterRoutes()
 
-	eventController := controllers.NewEventController(app, eventService, jwtProvider, log)
-	eventController.RegisterRoutes()
+	events.NewEventController(app, eventService, jwtProvider, log)
 
 	// Initialize password controller
 	passwordController := controllers.NewPasswordController(app, userService, jwtProvider)

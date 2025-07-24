@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	_ "github.com/lib/pq"
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/wait"
@@ -16,7 +17,7 @@ import (
 
 var (
 	db        *gorm.DB
-	dbName    = "eventify_test"
+	dbName    = "eventify_test"+uuid.New().String()
 	container testcontainers.Container
 	ctx       = context.Background()
 )

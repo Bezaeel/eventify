@@ -4,6 +4,7 @@ import (
 	"eventify/internal/auth"
 	"eventify/internal/domain"
 	"eventify/internal/service"
+	"eventify/pkg"
 	"eventify/pkg/logger"
 	"time"
 
@@ -41,11 +42,6 @@ type UserProfileResponse struct {
 
 type RefreshRequest struct {
 	RefreshToken string `json:"refresh_token" validate:"required"`
-}
-
-type ErrorResponse struct {
-	Message string `json:"message"`
-	Error   string `json:"error,omitempty"`
 }
 
 type AuthController struct {
@@ -88,13 +84,13 @@ func (ac *AuthController) RegisterRoutes() {
 // @Produce json
 // @Param credentials body LoginRequest true "Login credentials"
 // @Success 200 {object} AuthResponse
-// @Failure 400 {object} ErrorResponse
-// @Failure 401 {object} ErrorResponse
+// @Failure 400 {object} pkg.ErrorResponse
+// @Failure 401 {object} pkg.ErrorResponse
 // @Router /api/v1/auth/login [post]
 func (ac *AuthController) Login(c *fiber.Ctx) error {
 	var request LoginRequest
 	if err := c.BodyParser(&request); err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(ErrorResponse{
+		return c.Status(fiber.StatusBadRequest).JSON(pkg.ErrorResponse{
 			Message: "Invalid request body",
 			Error:   err.Error(),
 		})
@@ -115,7 +111,7 @@ func (ac *AuthController) Login(c *fiber.Ctx) error {
 		ac.log.WithFields(logger.Fields{
 			"email": request.Email,
 		}).ErrorWithError("Login request body parsing error", err)
-		return c.Status(fiber.StatusUnauthorized).JSON(ErrorResponse{
+		return c.Status(fiber.StatusUnauthorized).JSON(pkg.ErrorResponse{
 			Message: "Invalid credentials",
 		})
 	}
@@ -123,7 +119,7 @@ func (ac *AuthController) Login(c *fiber.Ctx) error {
 	// Get user permissions
 	permissions, err := ac.permissionService.GetPermissions(user.ID)
 	if err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(ErrorResponse{
+		return c.Status(fiber.StatusInternalServerError).JSON(pkg.ErrorResponse{
 			Message: "Error fetching user permissions",
 		})
 	}
@@ -131,7 +127,7 @@ func (ac *AuthController) Login(c *fiber.Ctx) error {
 	// Generate JWT token
 	token, err := ac.jwtProvider.GenerateToken(user, permissions)
 	if err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(ErrorResponse{
+		return c.Status(fiber.StatusInternalServerError).JSON(pkg.ErrorResponse{
 			Message: "Error generating token",
 		})
 	}
@@ -153,13 +149,13 @@ func (ac *AuthController) Login(c *fiber.Ctx) error {
 // @Produce json
 // @Param user body SignupRequest true "User information"
 // @Success 201 {object} AuthResponse
-// @Failure 400 {object} ErrorResponse
-// @Failure 409 {object} ErrorResponse
+// @Failure 400 {object} pkg.ErrorResponse
+// @Failure 409 {object} pkg.ErrorResponse
 // @Router /api/v1/auth/signup [post]
 func (ac *AuthController) Signup(c *fiber.Ctx) error {
 	var request SignupRequest
 	if err := c.BodyParser(&request); err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(ErrorResponse{
+		return c.Status(fiber.StatusBadRequest).JSON(pkg.ErrorResponse{
 			Message: "Invalid request body",
 			Error:   err.Error(),
 		})
@@ -168,7 +164,7 @@ func (ac *AuthController) Signup(c *fiber.Ctx) error {
 	// Check if user already exists
 	existingUser, _ := ac.UserService.GetByEmail(request.Email)
 	if existingUser != nil {
-		return c.Status(fiber.StatusConflict).JSON(ErrorResponse{
+		return c.Status(fiber.StatusConflict).JSON(pkg.ErrorResponse{
 			Message: "User with this email already exists",
 		})
 	}
@@ -183,7 +179,7 @@ func (ac *AuthController) Signup(c *fiber.Ctx) error {
 	}
 
 	if err := ac.UserService.Create(user); err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(ErrorResponse{
+		return c.Status(fiber.StatusInternalServerError).JSON(pkg.ErrorResponse{
 			Message: "Error creating user",
 			Error:   err.Error(),
 		})
@@ -192,7 +188,7 @@ func (ac *AuthController) Signup(c *fiber.Ctx) error {
 	// Generate JWT token
 	token, err := ac.jwtProvider.GenerateToken(user, []string{})
 	if err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(ErrorResponse{
+		return c.Status(fiber.StatusInternalServerError).JSON(pkg.ErrorResponse{
 			Message: "Error generating token",
 		})
 	}
@@ -212,13 +208,13 @@ func (ac *AuthController) Signup(c *fiber.Ctx) error {
 // @Produce json
 // @Param refresh_token body RefreshRequest true "Refresh token"
 // @Success 200 {object} AuthResponse
-// @Failure 400 {object} ErrorResponse
-// @Failure 401 {object} ErrorResponse
+// @Failure 400 {object} pkg.ErrorResponse
+// @Failure 401 {object} pkg.ErrorResponse
 // @Router /api/v1/auth/refresh [post]
 func (ac *AuthController) RefreshToken(c *fiber.Ctx) error {
 	var request RefreshRequest
 	if err := c.BodyParser(&request); err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(ErrorResponse{
+		return c.Status(fiber.StatusBadRequest).JSON(pkg.ErrorResponse{
 			Message: "Invalid request body",
 			Error:   err.Error(),
 		})
@@ -227,7 +223,7 @@ func (ac *AuthController) RefreshToken(c *fiber.Ctx) error {
 	// Validate refresh token
 	claims, err := ac.jwtProvider.ValidateToken(request.RefreshToken)
 	if err != nil {
-		return c.Status(fiber.StatusUnauthorized).JSON(ErrorResponse{
+		return c.Status(fiber.StatusUnauthorized).JSON(pkg.ErrorResponse{
 			Message: "Invalid refresh token",
 		})
 	}
@@ -235,7 +231,7 @@ func (ac *AuthController) RefreshToken(c *fiber.Ctx) error {
 	// Get user from database
 	user, err := ac.UserService.GetByID(claims.UserID)
 	if err != nil {
-		return c.Status(fiber.StatusUnauthorized).JSON(ErrorResponse{
+		return c.Status(fiber.StatusUnauthorized).JSON(pkg.ErrorResponse{
 			Message: "User not found",
 		})
 	}
@@ -243,7 +239,7 @@ func (ac *AuthController) RefreshToken(c *fiber.Ctx) error {
 	// Get user permissions
 	permissions, err := ac.permissionService.GetPermissions(user.ID)
 	if err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(ErrorResponse{
+		return c.Status(fiber.StatusInternalServerError).JSON(pkg.ErrorResponse{
 			Message: "Error fetching user permissions",
 		})
 	}
@@ -251,7 +247,7 @@ func (ac *AuthController) RefreshToken(c *fiber.Ctx) error {
 	// Generate new token
 	token, err := ac.jwtProvider.GenerateToken(user, permissions)
 	if err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(ErrorResponse{
+		return c.Status(fiber.StatusInternalServerError).JSON(pkg.ErrorResponse{
 			Message: "Error generating token",
 		})
 	}
@@ -271,13 +267,13 @@ func (ac *AuthController) RefreshToken(c *fiber.Ctx) error {
 // @Produce json
 // @Security BearerAuth
 // @Success 200 {object} UserProfileResponse
-// @Failure 401 {object} ErrorResponse
+// @Failure 401 {object} pkg.ErrorResponse
 // @Router /api/v1/auth/me [get]
 func (ac *AuthController) GetCurrentUser(c *fiber.Ctx) error {
 	// The JWT middleware sets the claims in the context
 	claims, ok := c.Locals("claims").(*auth.CustomClaims)
 	if !ok {
-		return c.Status(fiber.StatusUnauthorized).JSON(ErrorResponse{
+		return c.Status(fiber.StatusUnauthorized).JSON(pkg.ErrorResponse{
 			Message: "Unauthorized",
 		})
 	}
@@ -285,7 +281,7 @@ func (ac *AuthController) GetCurrentUser(c *fiber.Ctx) error {
 	// Get user from database
 	user, err := ac.UserService.GetByID(claims.UserID)
 	if err != nil {
-		return c.Status(fiber.StatusUnauthorized).JSON(ErrorResponse{
+		return c.Status(fiber.StatusUnauthorized).JSON(pkg.ErrorResponse{
 			Message: "User not found",
 		})
 	}
