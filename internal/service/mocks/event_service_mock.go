@@ -64,6 +64,20 @@ func (mr *MockIEventServiceMockRecorder) DeleteEvent(id, ctx interface{}) *gomoc
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteEvent", reflect.TypeOf((*MockIEventService)(nil).DeleteEvent), id, ctx)
 }
 
+// Get2AllEvents mocks base method.
+func (m *MockIEventService) Get2AllEvents(ctx context.Context) []domain.Event {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Get2AllEvents", ctx)
+	ret0, _ := ret[0].([]domain.Event)
+	return ret0
+}
+
+// Get2AllEvents indicates an expected call of Get2AllEvents.
+func (mr *MockIEventServiceMockRecorder) Get2AllEvents(ctx interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Get2AllEvents", reflect.TypeOf((*MockIEventService)(nil).Get2AllEvents), ctx)
+}
+
 // GetAllEvents mocks base method.
 func (m *MockIEventService) GetAllEvents(ctx context.Context) []domain.Event {
 	m.ctrl.T.Helper()

@@ -1,15 +1,18 @@
 package main
 
 import (
-	"eventify/api/controllers/v1"
 	"eventify/api/controllers/events"
+	"eventify/api/controllers/v1"
 	adminControllers "eventify/api/controllers/v1/admin"
 	"eventify/internal/auth"
 	"eventify/internal/config"
 	"eventify/internal/service"
 	"eventify/pkg/database"
 	"eventify/pkg/logger"
+	"eventify/pkg/telemetry"
 	"os"
+	"os/signal"
+	"syscall"
 
 	scalar "github.com/oSethoum/fiber-scalar"
 )
@@ -58,13 +61,17 @@ func main() {
 		"eventify-api",
 	)
 
+	// add telemetry
+	telemetry.AddTelemetry("eventify-api")
+	telemetryAdapter := telemetry.NewTelemetryAdapter()
+
 	// Initialize permission service
 
-	apiHttpServer := NewAPIServer()
+	apiHttpServer := NewAPIServer(telemetryAdapter)
 	app := apiHttpServer.App()
 
 	// Initialize repositories
-	eventService := service.NewEventService(db, log)
+	eventService := service.NewEventService(db, log, telemetryAdapter)
 	userService := service.NewUserService(db)
 	roleService := service.NewRoleService(db)
 	permissionService := service.NewPermissionService(db)
@@ -73,7 +80,7 @@ func main() {
 	authController := controllers.NewAuthController(app, userService, jwtProvider, permissionService, log)
 	authController.RegisterRoutes()
 
-	events.NewEventController(app, eventService, jwtProvider, log)
+	events.NewEventController(app, telemetryAdapter, eventService, jwtProvider, log)
 
 	// Initialize password controller
 	passwordController := controllers.NewPasswordController(app, userService, jwtProvider)
@@ -85,14 +92,28 @@ func main() {
 
 	// Add Swagger handler
 	app.Get("/docs", scalar.Handler(&scalar.Options{
-						SpecURL: "../docs/swagger.json",
-            SpecFile: "../docs/swagger.json",
-            Layout:   scalar.LayoutClassic,
-            Theme:    scalar.ThemeSolarized,
-            DarkMode: true,
-            // other options can go here
-        }))
+		SpecURL:  "../docs/swagger.json",
+		SpecFile: "../docs/swagger.json",
+		Layout:   scalar.LayoutClassic,
+		Theme:    scalar.ThemeSolarized,
+		DarkMode: true,
+		// other options can go here
+	}))
+
+	// Setup graceful shutdown
+	c := make(chan os.Signal, 1)
+	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
+
+	go func() {
+		<-c
+		log.Info("Shutting down gracefully...")
+		if err := telemetry.ShutdownTracer(); err != nil {
+			log.ErrorWithError("Error shutting down tracer", err)
+		}
+		os.Exit(0)
+	}()
 
 	// Start the server
+	log.Info("Starting server on :3000")
 	app.Listen(":3000")
 }

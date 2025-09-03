@@ -4,8 +4,11 @@ import (
 	"eventify/internal/auth"
 	"eventify/internal/service"
 	"eventify/pkg/logger"
+	"fmt"
 
 	"github.com/gofiber/fiber/v2"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/propagation"
 )
 
 type v2EventController struct {
@@ -43,5 +46,16 @@ func (ec *v2EventController) RegisterV2Routes() {
 // @Produce json
 // @Router /api/v2/events [get]
 func (ec *v2EventController) index(c *fiber.Ctx) error {
+	propagator := otel.GetTextMapPropagator()
+		extractCtx := propagator.Extract(c.UserContext(), propagation.HeaderCarrier(c.GetReqHeaders()))
+
+		fmt.Printf("Your correlationId is %v", c.Locals("correlationId"))
+
+		tracer := otel.Tracer("Order Api")
+		_, span := tracer.Start(extractCtx, "GetOrderById Controller")
+		defer span.End()
+
+		traceParent := c.Get("traceparent")
+		fmt.Println("traceParent: " + traceParent)
 	return c.SendString("v1")
 }

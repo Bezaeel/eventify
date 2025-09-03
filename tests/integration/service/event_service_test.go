@@ -5,9 +5,13 @@ import (
 	"eventify/internal/domain"
 	"eventify/internal/service"
 	"eventify/pkg/logger"
+	"eventify/pkg/telemetry/mocks"
+	"eventify/tests/unit/helpers"
+	"eventify/tests/unit/helpers/builders"
 	"testing"
 	"time"
 
+	"github.com/golang/mock/gomock"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/suite"
 	"gorm.io/gorm"
@@ -15,12 +19,14 @@ import (
 
 type EventServiceIntegrationTestSuite struct {
 	suite.Suite
-	db        *gorm.DB
-	logger    *logger.Logger
-	cleanUp   func()
-	service   *service.EventService
-	testUser  *domain.User
-	testEvent *domain.Event
+	db               *gorm.DB
+	logger           *logger.Logger
+	telemetryAdapter *mocks.MockITelemetryAdapter
+	telemetryHelper  *helpers.TelemetryAssertions
+	cleanUp          func()
+	service          *service.EventService
+	testUser         *domain.User
+	testEvent        *domain.Event
 }
 
 func TestEventServiceSuite(t *testing.T) {
@@ -33,11 +39,13 @@ func (s *EventServiceIntegrationTestSuite) SetupSuite() {
 	s.db = db
 	s.cleanUp = cleanUp
 	s.logger = logger.New(true)
-	s.service = service.NewEventService(s.db, s.logger)
+	ctrl := gomock.NewController(s.T())
+	s.telemetryAdapter = mocks.NewMockITelemetryAdapter(ctrl)
+	s.telemetryHelper = helpers.NewTelemetryAssertions(s.telemetryAdapter, s.T())
+	s.service = service.NewEventService(s.db, s.logger, s.telemetryAdapter)
 }
 
 func (s *EventServiceIntegrationTestSuite) TearDownSuite() {
-	// No need to terminate container here as it's handled in setup_test.go
 	s.cleanUp()
 }
 
@@ -52,6 +60,12 @@ func (s *EventServiceIntegrationTestSuite) SetupTest() {
 		CreatedAt: time.Now(),
 		UpdatedAt: nil,
 	}
+
+	// Reset the mock for each test
+	ctrl := gomock.NewController(s.T())
+	s.telemetryAdapter = mocks.NewMockITelemetryAdapter(ctrl)
+	s.telemetryHelper = helpers.NewTelemetryAssertions(s.telemetryAdapter, s.T())
+	s.service = service.NewEventService(s.db, s.logger, s.telemetryAdapter)
 }
 
 func (s *EventServiceIntegrationTestSuite) TearDownTest() {
@@ -61,18 +75,15 @@ func (s *EventServiceIntegrationTestSuite) TearDownTest() {
 }
 
 func (s *EventServiceIntegrationTestSuite) TestCreateEvent() {
+	// Ensure the test user exists in the database first
+	err := s.db.Create(s.testUser).Error
+	s.NoError(err)
 
-	testEvent := &domain.Event{
-		Id:        uuid.New(),
-		Name:      "Test Event",
-		Date:      time.Now().Add(24 * time.Hour),
-		Location:  "Test Location",
-		CreatedBy: uuid.New(),
-		CreatedAt: time.Now(),
-		UpdatedAt: nil,
-		Creator:   *s.testUser,
-	}
-	err := s.service.CreateEvent(testEvent, context.Background())
+	newEvent := builders.NewEventBuilder().
+		WithDate(time.Now().Add(24 * time.Hour)).
+		WithCreatedBy(s.testUser.ID).
+		Create()
+	err = s.service.CreateEvent(newEvent, context.Background())
 	s.NoError(err)
 }
 
@@ -102,6 +113,12 @@ func (s *EventServiceIntegrationTestSuite) TestGetEventById() {
 }
 
 func (s *EventServiceIntegrationTestSuite) TestGetAllEvents() {
+	// Set up expectations using the helper
+	s.telemetryHelper.ExpectTrackEvent("GetAllEvents", map[string]string{
+		"operation": "fetch_all_events",
+		"service":   "EventService",
+	})
+
 	// First create the event
 	testEvents := []*domain.Event{
 		{
@@ -143,6 +160,9 @@ func (s *EventServiceIntegrationTestSuite) TestGetAllEvents() {
 		}
 		s.True(found, "Event %s not found in the list of events", testEvent.Id)
 	}
+
+	// Assert that expectations were met
+	s.telemetryHelper.AssertExpectations()
 }
 
 func (s *EventServiceIntegrationTestSuite) TestUpdateEvent() {
@@ -173,7 +193,11 @@ func (s *EventServiceIntegrationTestSuite) TestUpdateEvent() {
 		Creator:   initialEvent.Creator,
 	}
 
-	s.service.UpdateEvent(updatedEvent, context.Background())
+	// Set up expectations using the helper
+	s.telemetryHelper.SetupCommonExpectations("update_event", "EventService", updatedEvent.Id.String())
+
+	err := s.service.UpdateEvent(updatedEvent, context.Background())
+	s.NoError(err)
 
 	// Verify update
 	var actual domain.Event
@@ -182,6 +206,32 @@ func (s *EventServiceIntegrationTestSuite) TestUpdateEvent() {
 	s.NotNil(actual)
 	s.Equal(updatedEvent.Name, actual.Name)
 	s.Equal(updatedEvent.Location, actual.Location)
+
+	// Assert that expectations were met
+	s.telemetryHelper.AssertExpectations()
+}
+
+func (s *EventServiceIntegrationTestSuite) TestUpdateEventWithError() {
+	// Create an event with an invalid ID that doesn't exist in the database
+	nonExistentEvent := &domain.Event{
+		Id:        uuid.New(), // This ID doesn't exist in the database
+		Name:      "Non-existent Event",
+		Date:      time.Now().Add(24 * time.Hour),
+		Location:  "Test Location",
+		CreatedBy: uuid.New(),
+		CreatedAt: time.Now(),
+		UpdatedAt: nil,
+	}
+
+	// Set up expectations for both event and error tracking using the helper
+	s.telemetryHelper.SetupErrorExpectations("update_event", "EventService", nonExistentEvent.Id.String())
+
+	// Attempt to update the non-existent event
+	err := s.service.UpdateEvent(nonExistentEvent, context.Background())
+	s.Error(err) // Should fail because the event doesn't exist
+
+	// Assert that expectations were met
+	s.telemetryHelper.AssertExpectations()
 }
 
 func (s *EventServiceIntegrationTestSuite) TestDeleteEvent() {

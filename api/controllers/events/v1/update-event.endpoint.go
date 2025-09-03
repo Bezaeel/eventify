@@ -4,6 +4,7 @@ import (
 	"eventify/api/middlewares"
 	"eventify/internal/constants"
 	"eventify/internal/domain"
+	"time"
 
 	"eventify/pkg"
 
@@ -11,10 +12,11 @@ import (
 	"github.com/google/uuid"
 )
 
-func (ec *v1EventController) registerUpdateEventRoutes() {
+func (ec *V1EventController) registerUpdateEventRoutes() {
 	ec.router.Put("/:id",
+		middlewares.JWTMiddleware(ec.jwtProvider),
 		middlewares.HasPermission([]string{constants.Permissions.EventPermissions.Update}),
-		middlewares.AnotherMiddleware(),
+		// middlewares.AnotherMiddleware(),
 		ec.UpdateEvent)
 }
 
@@ -31,44 +33,64 @@ func (ec *v1EventController) registerUpdateEventRoutes() {
 // @Failure 400 {object} pkg.ErrorResponse
 // @Failure 500 {object} pkg.ErrorResponse
 // @Router /api/v1/events/{id} [put]
-func (ec *v1EventController) UpdateEvent(c *fiber.Ctx) error {
+func (ec *V1EventController) UpdateEvent(c *fiber.Ctx) error {
 	id := c.Params("id")
-	uuid, err := uuid.Parse(id)
+	eventId, err := uuid.Parse(id)
 	if err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(pkg.ErrorResponse{
 			Message: "Invalid UUID",
 		})
 	}
-	event := new(domain.Event)
-	if err := c.BodyParser(event); err != nil {
+	request := new(UpdateEventRequest)
+	if err := c.BodyParser(request); err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(pkg.ErrorResponse{
 			Message: err.Error(),
 		})
 	}
-	event.Id = uuid
+	request.Id = eventId
+	event := mapUpdateEventRequestToEventEntity(request)
 	if err := ec.service.UpdateEvent(event, c.Context()); err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(pkg.ErrorResponse{
 			Message: err.Error(),
 		})
 	}
-	return c.Status(fiber.StatusOK).JSON(event)
+	response := mapEventEntityToUpdateEventResponse(event)
+	return c.Status(fiber.StatusOK).JSON(response)
 }
 
 // dtos
-type CreateEventRequest struct {
-	Name        string   `json:"name" validate:"required"`
-	Description string   `json:"description" validate:"required"`
-	Date        string   `json:"date" validate:"required"`
-	Location    string   `json:"location" validate:"required"`
-	Organizer   string   `json:"organizer" validate:"required"`
-	Category    string   `json:"category" validate:"required"`
-	Tags        []string `json:"tags" validate:"dive,required"`
-	Capacity    int      `json:"capacity" validate:"required,min=1"`
+type UpdateEventRequest struct {
+	Id          uuid.UUID `json:"id" validate:"required,uuid"`
+	Name        string    `json:"name" validate:"required"`
+	Description string    `json:"description" validate:"required"`
+	Date        time.Time `json:"date" validate:"required"`
+	Location    string    `json:"location" validate:"required"`
+	Organizer   string    `json:"organizer" validate:"required"`
+	Category    string    `json:"category" validate:"required"`
+	Tags        []string  `json:"tags" validate:"dive,required"`
+	Capacity    int       `json:"capacity" validate:"required,min=1"`
 }
 
-type CreateEventResponse struct {
+type UpdateEventResponse struct {
 	EventID uuid.UUID `json:"event_id"`
 }
 
 // mapper
+func mapEventEntityToUpdateEventResponse(event *domain.Event) *UpdateEventResponse {
+	return &UpdateEventResponse{
+		EventID: event.Id,
+	}
+}
+
+func mapUpdateEventRequestToEventEntity(req *UpdateEventRequest) *domain.Event {
+	now := time.Now()
+
+	return &domain.Event{
+		Name:      req.Name,
+		Date:      req.Date,
+		Location:  req.Location,
+		UpdatedAt: &now,
+	}
+}
+
 // validator

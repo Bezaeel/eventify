@@ -3,7 +3,7 @@ package admin_test
 import (
 	"bytes"
 	"encoding/json"
-	controllers "eventify/internal/api/controllers/v1/admin"
+	controllers "eventify/api/controllers/v1/admin"
 	"eventify/internal/constants"
 	"eventify/internal/domain"
 	"eventify/tests/unit/helpers"

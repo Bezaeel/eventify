@@ -68,8 +68,9 @@ mock:
 	@echo "Generating mocks..."
 	$(MOCKGEN) -source=internal/service/event_service.go -destination=internal/service/mocks/event_service_mock.go -package=mocks
 	$(MOCKGEN) -source=internal/service/user_service.go -destination=internal/service/mocks/user_service_mock.go -package=mocks
-	$(MOCKGEN) -source=internal/service/role_service.go -destination=internal/service/mocks/role_service_mock.go -package=mocks
+	$(MOCKGEN) -source=internal/service/role_service.go -destination=internal/service/mocks/role_service_mock.go -package=mocks	
 	$(MOCKGEN) -source=internal/service/permission_service.go -destination=internal/service/mocks/permission_service_mock.go -package=mocks
+	$(MOCKGEN) -source=pkg/telemetry/telemetryAdapter.go -destination=pkg/telemetry/mocks/telemetry_adapter_mock.go -package=mocks
 
 # Generate Swagger documentation
 swagger:
