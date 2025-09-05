@@ -1,7 +1,7 @@
 package database
 
 import (
-	"eventify/internal/config"
+	"eventify/internal/shared/config"
 	"fmt"
 
 	"gorm.io/driver/postgres"

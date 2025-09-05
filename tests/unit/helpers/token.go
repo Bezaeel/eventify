@@ -1,7 +1,7 @@
 package helpers
 
 import (
-	"eventify/internal/auth"
+	"eventify/internal/shared/auth"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
