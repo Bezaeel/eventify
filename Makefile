@@ -12,7 +12,7 @@ DB_NAME ?= eventify
 
 # Go parameters
 BINARY_NAME=eventify
-MAIN_FILE= cmd/main.go
+MAIN_FILE= cmd/http-server/main.go
 MIGRATION_DIR=internal/database/migrations
 
 # Tools
@@ -27,9 +27,17 @@ DB_URL=postgres://$(DB_USER):$(DB_PASSWORD)@$(DB_HOST):$(DB_PORT)/$(DB_NAME)?ssl
 all: clean swagger mock test run
 
 # Run the application
-run:
-	@echo "Running application..."
-	cd cmd && go run .
+run-http:
+	@echo "Running service..."
+	cd cmd/http-server && go run .
+
+run-grpc:
+	@echo "Running service..."
+	cd cmd/grpc-server && go run .
+
+run-graphql:
+	@echo "Running service..."
+	cd cmd/graphql-server && go run .
 
 # Run all tests (unit + integration)
 test: test-unit test-integration

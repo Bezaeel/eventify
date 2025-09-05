@@ -1,178 +1,189 @@
-# Eventify
+# Eventify - Multi-Protocol API
 
-Eventify is a Go-based REST API for event management with role-based access control (RBAC).
-
-## Features
-
-- 🔐 JWT Authentication
-- 👥 Role-Based Access Control (RBAC)
-- 📅 Event Management
-- 📚 Swagger Documentation
-- 🔄 Database Migrations
-- ✅ Unit and Integration Tests
-
-## Prerequisites
-
-- Go 1.19 or higher
-- PostgreSQL 12 or higher
-- Make
+A modern event management system supporting HTTP REST, gRPC, and GraphQL APIs with shared business logic and maximum component reuse.
 
 ## Project Structure
 
 ```
-.
-├── cmd/                    # Application entrypoints
-├── docs/                   # Swagger documentation
-├── internal/               # Private application code
-│   ├── api/               # API handlers and middleware
-│   ├── auth/              # Authentication logic
-│   ├── config/            # Configuration
-│   ├── database/          # Database migrations
-│   ├── domain/            # Domain models
-│   └── service/           # Business logic
-├── pkg/                    # Public libraries
-├── test/                  # Integration tests
-├── .env                   # Environment variables (create from .env.example)
-├── go.mod                 # Go modules
-└── Makefile              # Build automation
+/Users/talabi/repo/bezaeel/go/context/eventify/
+├── api/
+│   ├── http/                    # HTTP REST endpoints
+│   │   ├── controllers/         # HTTP controllers
+│   │   ├── middlewares/        # HTTP middlewares
+│   │   └── routes/             # HTTP route definitions
+│   ├── grpc/                   # gRPC endpoints
+│   │   ├── handlers/           # gRPC handlers
+│   │   ├── interceptors/       # gRPC interceptors
+│   │   └── proto/              # Protocol buffer definitions
+│   └── graphql/                # GraphQL endpoints
+│       ├── resolvers/          # GraphQL resolvers
+│       ├── schemas/            # GraphQL schema definitions
+│       └── directives/         # GraphQL directives
+├── internal/
+│   ├── domain/                 # Shared domain models
+│   ├── service/                # Shared business logic
+│   ├── repository/             # Shared data access layer
+│   └── shared/                 # Shared utilities
+│       ├── auth/               # Authentication & authorization
+│       ├── config/             # Configuration management
+│       └── constants/          # Shared constants
+├── pkg/                        # Shared packages
+│   ├── database/               # Database connection
+│   ├── logger/                 # Logging utilities
+│   └── telemetry/              # Observability & telemetry
+├── cmd/
+│   ├── http-server/            # HTTP server binary
+│   ├── grpc-server/            # gRPC server binary
+│   └── graphql-server/         # GraphQL server binary
+└── tests/
+    ├── integration/
+    │   ├── http/               # HTTP integration tests
+    │   ├── grpc/               # gRPC integration tests
+    │   └── graphql/            # GraphQL integration tests
+    └── unit/
+        ├── http/               # HTTP unit tests
+        ├── grpc/               # gRPC unit tests
+        └── graphql/            # GraphQL unit tests
 ```
+
+## Architecture Overview
+
+### Shared Components
+
+All three API protocols (HTTP, gRPC, GraphQL) share the same core components:
+
+- **Domain Models**: Single source of truth for data structures
+- **Business Logic**: Shared service layer for all business operations
+- **Data Access**: Unified repository pattern for database operations
+- **Authentication**: Common JWT-based authentication system
+- **Telemetry**: Unified observability and monitoring
+- **Configuration**: Centralized configuration management
+
+### API-Specific Components
+
+Each API type has its own transport layer:
+
+- **HTTP**: Controllers, middlewares, and route definitions
+- **gRPC**: Handlers, interceptors, and protocol buffer definitions
+- **GraphQL**: Resolvers, schemas, and directives
 
 ## Getting Started
 
-1. Clone the repository:
-   ```bash
-   git clone <repository-url>
-   cd eventify
-   ```
+### Prerequisites
 
-2. Install dependencies:
-   ```bash
-   make deps
-   ```
+- Go 1.21+
+- PostgreSQL
+- Docker (for development)
 
-3. Create and configure your environment variables:
-   ```bash
-   cp .env.example .env
-   # Edit .env with your database credentials and other configurations
-   ```
+### Running the Servers
 
-4. Run database migrations:
-   ```bash
-   make migrate-up
-   ```
+#### HTTP Server (REST API)
+```bash
+cd cmd/http-server
+go run main.go
+# Server starts on :3000
+```
 
-5. Generate Swagger documentation:
-   ```bash
-   make swagger
-   ```
+#### gRPC Server
+```bash
+cd cmd/grpc-server
+go run main.go
+# Server starts on :50051
+```
 
-6. Run the application:
-   ```bash
-   make run
-   ```
+#### GraphQL Server
+```bash
+cd cmd/graphql-server
+go run main.go
+# Server starts on :8080
+```
 
-The API will be available at `http://localhost:3000` and Swagger documentation at `http://localhost:3000/swagger/`.
+### Database Setup
 
-## Available Make Commands
+```bash
+# Run migrations
+go run cmd/http-server/main.go migrate
 
-- `make run` - Run the application
-- `make test` - Run tests
-- `make test-coverage` - Run tests with coverage report
-- `make mock` - Generate mocks for testing
-- `make swagger` - Generate Swagger documentation
-- `make migrate-create` - Create a new migration
-- `make migrate-up` - Run migrations up
-- `make migrate-down` - Run migrations down
-- `make deps` - Install dependencies
-- `make clean` - Clean build artifacts
-- `make build` - Build the application
-- `make config` - Show current configuration
-- `make all` - Run clean, swagger, mock, test, and run
-
-## Environment Variables
-
-Create a `.env` file in the root directory with the following variables:
-
-```env
-# Database Configuration
-DB_USER=postgres
-DB_PASSWORD=your_password
-DB_HOST=localhost
-DB_PORT=5432
-DB_NAME=eventify
-
-# JWT Configuration
-JWT_SECRET=your_jwt_secret
-
-# Server Configuration
-PORT=3000
+# Seed initial data
+go run cmd/http-server/main.go seed
 ```
 
 ## API Documentation
 
-The API documentation is available through Swagger UI at `http://localhost:3000/swagger/` when the application is running.
+### HTTP REST API
+- **Swagger UI**: `http://localhost:3000/docs`
+- **Base URL**: `http://localhost:3000/api/v1`
 
-### Main Endpoints
+### gRPC API
+- **Reflection**: Available for development tools
+- **Port**: `:50051`
 
-- **Authentication**
-  - POST `/api/v1/auth/login` - User login
-  - POST `/api/v1/auth/register` - User registration
+### GraphQL API
+- **Playground**: `http://localhost:8080`
+- **Endpoint**: `http://localhost:8080/query`
 
-- **Events**
-  - GET `/api/v1/events` - List all events
-  - POST `/api/v1/events` - Create a new event
-  - GET `/api/v1/events/{id}` - Get event details
-  - PUT `/api/v1/events/{id}` - Update an event
-  - DELETE `/api/v1/events/{id}` - Delete an event
+## Development
 
-- **Admin**
-  - GET `/api/v1/admin/roles` - List all roles
-  - POST `/api/v1/admin/roles` - Create a new role
-  - POST `/api/v1/admin/roles/assign` - Assign role to user
-  - POST `/api/v1/admin/permissions/assign` - Assign permission to role
+### Running Tests
 
-## Testing
-
-The project includes both unit and integration tests. All tests run without cache to ensure fresh results every time. You can run them separately or together:
-
-### Run All Tests
 ```bash
-make test
+# All tests
+go test ./tests/...
+
+# HTTP tests only
+go test ./tests/unit/http/...
+go test ./tests/integration/http/...
+
+# gRPC tests only
+go test ./tests/unit/grpc/...
+go test ./tests/integration/grpc/...
+
+# GraphQL tests only
+go test ./tests/unit/graphql/...
+go test ./tests/integration/graphql/...
 ```
 
-### Run Unit Tests Only
+### Code Generation
+
+#### gRPC
 ```bash
-make test-unit
+# Generate protobuf code
+protoc --go_out=. --go_opt=paths=source_relative \
+       --go-grpc_out=. --go-grpc_opt=paths=source_relative \
+       api/grpc/proto/*.proto
 ```
 
-### Run Integration Tests Only
+#### GraphQL
 ```bash
-make test-integration
+# Generate GraphQL code (when using gqlgen)
+go run github.com/99designs/gqlgen generate
 ```
 
-### Generate Coverage Reports
-```bash
-# All tests coverage
-make test-coverage
+## Key Features
 
-# Unit tests coverage
-make test-unit-coverage
+### Maximum Component Reuse
+- **Single Business Logic**: All APIs use the same service layer
+- **Shared Domain Models**: Consistent data structures across protocols
+- **Unified Authentication**: Same JWT system for all APIs
+- **Common Telemetry**: Unified observability and monitoring
 
-# Integration tests coverage
-make test-integration-coverage
-```
+### Protocol-Specific Optimizations
+- **HTTP**: RESTful design with JSON responses
+- **gRPC**: High-performance binary protocol
+- **GraphQL**: Flexible querying with schema introspection
 
-Coverage reports will be generated in HTML format and automatically opened in your default browser.
-
-Note: All test commands use the `-count=1` flag to bypass the test cache and ensure fresh test runs.
+### Scalability
+- **Independent Deployment**: Each API can be deployed separately
+- **Different Scaling**: Each API can scale independently
+- **API Gateway Ready**: Can be fronted by an API gateway
 
 ## Contributing
 
-1. Create a new branch for your feature
-2. Make your changes
-3. Run tests and ensure they pass
-4. Submit a pull request
+1. Follow the existing code structure
+2. Add tests for new features
+3. Update documentation
+4. Ensure all APIs remain consistent
 
 ## License
 
-This project is licensed under the MIT License - see the LICENSE file for details.
+[Add your license here]
