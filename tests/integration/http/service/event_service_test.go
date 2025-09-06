@@ -88,21 +88,23 @@ func (s *EventServiceIntegrationTestSuite) TestCreateEvent() {
 }
 
 func (s *EventServiceIntegrationTestSuite) TestGetEventById() {
+	// Ensure the test user exists in the database first
+	err := s.db.Create(s.testUser).Error
+	s.NoError(err)
+
 	// First create the event
 	testEvent := &domain.Event{
 		Id:        uuid.New(),
 		Name:      "Test Event",
 		Date:      time.Now().Add(24 * time.Hour),
 		Location:  "Test Location",
-		CreatedBy: uuid.New(),
+		CreatedBy: s.testUser.ID,
 		CreatedAt: time.Now(),
 		UpdatedAt: nil,
-		Creator:   *s.testUser,
+		Creator:   nil,
 	}
-	err := s.db.Create(s.testUser) // Ensure the user is created first
-	s.NoError(err.Error)
-	err = s.db.Create(testEvent)
-	s.NoError(err.Error)
+	err = s.db.Create(testEvent).Error
+	s.NoError(err)
 
 	// Then test getting it
 	event := s.service.GetEventById(testEvent.Id, context.Background())
@@ -119,6 +121,10 @@ func (s *EventServiceIntegrationTestSuite) TestGetAllEvents() {
 		"service":   "EventService",
 	})
 
+	// Ensure the test user exists in the database first
+	err := s.db.Create(s.testUser).Error
+	s.NoError(err)
+
 	// First create the event
 	testEvents := []*domain.Event{
 		{
@@ -126,26 +132,25 @@ func (s *EventServiceIntegrationTestSuite) TestGetAllEvents() {
 			Name:      "Test Event",
 			Date:      time.Now().Add(24 * time.Hour),
 			Location:  "Test Location",
-			CreatedBy: uuid.New(),
+			CreatedBy: s.testUser.ID,
 			CreatedAt: time.Now(),
 			UpdatedAt: nil,
-			Creator:   *s.testUser,
+			Creator:   nil,
 		},
 		{
 			Id:        uuid.New(),
 			Name:      "Another Test Event",
 			Date:      time.Now().Add(48 * time.Hour),
 			Location:  "Another Test Location",
-			CreatedBy: uuid.New(),
+			CreatedBy: s.testUser.ID,
 			CreatedAt: time.Now(),
 			UpdatedAt: nil,
-			Creator:   *s.testUser,
+			Creator:   nil,
 		},
 	}
 
-	s.db.Create(s.testUser) // Ensure the user is created first
-	err := s.db.Create(testEvents)
-	s.NoError(err.Error)
+	err = s.db.Create(testEvents).Error
+	s.NoError(err)
 
 	events := s.service.GetAllEvents(context.Background())
 	s.NotNil(events)
@@ -166,20 +171,24 @@ func (s *EventServiceIntegrationTestSuite) TestGetAllEvents() {
 }
 
 func (s *EventServiceIntegrationTestSuite) TestUpdateEvent() {
+	// Ensure the test user exists in the database first
+	err := s.db.Create(s.testUser).Error
+	s.NoError(err)
+
 	// First create the event
 	initialEvent := &domain.Event{
 		Id:        uuid.New(),
 		Name:      "Test Event",
 		Date:      time.Now().Add(24 * time.Hour),
 		Location:  "Test Location",
-		CreatedBy: uuid.New(),
+		CreatedBy: s.testUser.ID,
 		CreatedAt: time.Now(),
 		UpdatedAt: nil,
-		Creator:   *s.testUser,
+		Creator:   nil,
 	}
 
-	s.db.Create(s.testUser) // Ensure the user is created first
-	s.db.Create(initialEvent)
+	err = s.db.Create(initialEvent).Error
+	s.NoError(err)
 
 	now := time.Now().UTC()
 	updatedEvent := &domain.Event{
@@ -187,7 +196,7 @@ func (s *EventServiceIntegrationTestSuite) TestUpdateEvent() {
 		Name:      "Updated Event Name",
 		Date:      time.Now().Add(24 * time.Hour),
 		Location:  "Test Location",
-		CreatedBy: initialEvent.Creator.ID,
+		CreatedBy: initialEvent.CreatedBy,
 		CreatedAt: initialEvent.CreatedAt,
 		UpdatedAt: &now,
 		Creator:   initialEvent.Creator,
@@ -196,7 +205,7 @@ func (s *EventServiceIntegrationTestSuite) TestUpdateEvent() {
 	// Set up expectations using the helper
 	s.telemetryHelper.SetupCommonExpectations("update_event", "EventService", updatedEvent.Id.String())
 
-	err := s.service.UpdateEvent(updatedEvent, context.Background())
+	err = s.service.UpdateEvent(updatedEvent, context.Background())
 	s.NoError(err)
 
 	// Verify update
@@ -235,20 +244,24 @@ func (s *EventServiceIntegrationTestSuite) TestUpdateEventWithError() {
 }
 
 func (s *EventServiceIntegrationTestSuite) TestDeleteEvent() {
+	// Ensure the test user exists in the database first
+	err := s.db.Create(s.testUser).Error
+	s.NoError(err)
+
 	// First create the event
 	event := &domain.Event{
 		Id:        uuid.New(),
 		Name:      "Test Event",
 		Date:      time.Now().Add(24 * time.Hour),
 		Location:  "Test Location",
-		CreatedBy: uuid.New(),
+		CreatedBy: s.testUser.ID,
 		CreatedAt: time.Now(),
 		UpdatedAt: nil,
-		Creator:   *s.testUser,
+		Creator:   nil,
 	}
 
-	s.db.Create(s.testUser) // Ensure the user is created first
-	s.db.Create(event)
+	err = s.db.Create(event).Error
+	s.NoError(err)
 
 	s.service.DeleteEvent(event.Id, context.Background())
 

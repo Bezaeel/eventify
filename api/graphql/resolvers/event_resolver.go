@@ -285,22 +285,5 @@ func (r *EventResolver) convertToGraphQLEvent(event *domain.Event) *domain.Event
 		graphQLEvent.UpdatedAt = event.UpdatedAt
 	}
 
-	// Convert creator if available
-	if event.Creator.ID != uuid.Nil {
-		creator := &domain.User{
-			ID:        event.Creator.ID,
-			Email:     event.Creator.Email,
-			FirstName: event.Creator.FirstName,
-			LastName:  event.Creator.LastName,
-			CreatedAt: event.Creator.CreatedAt,
-		}
-
-		if event.Creator.UpdatedAt != nil {
-			creator.UpdatedAt = event.Creator.UpdatedAt
-		}
-
-		graphQLEvent.Creator = *creator
-	}
-
 	return graphQLEvent
 }

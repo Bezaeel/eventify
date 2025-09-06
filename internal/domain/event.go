@@ -19,5 +19,5 @@ type Event struct {
 	UpdatedAt   *time.Time `json:"updated_at" gorm:"column:updated_at"`
 	CreatedAt   time.Time  `json:"created_at" gorm:"column:created_at"`
 	CreatedBy   uuid.UUID  `json:"created_by" gorm:"column:created_by"`
-	Creator     User       `json:"creator,omitempty" gorm:"foreignKey:CreatedBy;references:ID"`
+	Creator     *User       `json:"creator,omitempty" gorm:"foreignKey:CreatedBy;references:ID"`
 }
