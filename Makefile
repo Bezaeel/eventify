@@ -8,12 +8,12 @@ DB_HOST ?= localhost
 DB_PORT ?= 5432
 DB_NAME ?= eventify
 
-.PHONY: run test test-unit test-integration test-coverage mock swagger migrate-up migrate-down migrate-create clean
+.PHONY: run-http run-grpc run-graphql test test-unit test-integration test-coverage mock swagger migrate-up migrate-down migrate-create clean
 
 # Go parameters
 BINARY_NAME=eventify
 MAIN_FILE= cmd/http-server/main.go
-MIGRATION_DIR=internal/database/migrations
+MIGRATION_DIR=internal/repository/database/migrations
 
 # Tools
 MOCKGEN=go run github.com/golang/mock/mockgen
