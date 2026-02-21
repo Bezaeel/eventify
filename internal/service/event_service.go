@@ -2,10 +2,11 @@ package service
 
 import (
 	"context"
+	"time"
+
 	"eventify/internal/domain"
 	"eventify/pkg/logger"
 	"eventify/pkg/telemetry"
-	"time"
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"

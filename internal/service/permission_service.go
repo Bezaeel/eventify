@@ -1,8 +1,10 @@
+// Package service provides services for managing permissions and roles.
 package service
 
 import (
-	"eventify/internal/domain"
 	"time"
+
+	"eventify/internal/domain"
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -44,7 +46,6 @@ func (p *PermissionService) GetPermissions(userID uuid.UUID) ([]string, error) {
 		Joins("JOIN user_roles ON role_permissions.role_id = user_roles.role_id").
 		Where("user_roles.user_id = ?", userID).
 		Scan(&permissions).Error
-
 	if err != nil {
 		return nil, err
 	}
