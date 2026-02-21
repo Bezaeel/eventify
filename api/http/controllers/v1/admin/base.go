@@ -1,10 +1,11 @@
+// Package controllers contains all the controllers for the admin API.
 package controllers
 
 import (
 	"eventify/api/http/middlewares"
+	"eventify/internal/service"
 	"eventify/internal/shared/auth"
 	"eventify/internal/shared/constants"
-	"eventify/internal/service"
 
 	"github.com/gofiber/fiber/v2"
 )
