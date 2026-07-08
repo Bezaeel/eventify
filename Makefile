@@ -1,154 +1,114 @@
-# Include .env file if it exists
 -include .env
+export
 
-# Default values for database connection (override these in .env file)
-DB_USER ?= postgres
+# Workspace-level orchestrator. Each module is buildable on its own; these
+# targets fan out across all of them.
+
+MODULES     := platform events outbox api subscribers
+BUILD_FLAGS := -ldflags="-s -w"
+BIN_DIR     := bin
+
+DB_USER     ?= postgres
 DB_PASSWORD ?= postgres
-DB_HOST ?= localhost
-DB_PORT ?= 5432
-DB_NAME ?= eventify
+DB_HOST     ?= localhost
+DB_PORT     ?= 5432
+DB_NAME     ?= eventify
+DB_URL      := postgres://$(DB_USER):$(DB_PASSWORD)@$(DB_HOST):$(DB_PORT)/$(DB_NAME)?sslmode=disable
 
-.PHONY: run-http run-grpc run-graphql test test-unit test-integration test-coverage mock swagger migrate-up migrate-down migrate-create clean
+# Migrations live beside the module that owns their tables. They are applied
+# against one database, in dependency order.
+MIGRATION_DIRS := api/internal/migrations outbox/migrations subscribers/migrations
 
-# Go parameters
-BINARY_NAME=eventify
-MAIN_FILE= cmd/http-server/main.go
-MIGRATION_DIR=internal/repository/database/migrations
+.PHONY: help build test test-unit test-integration vet staticcheck check \
+        migrate-up migrate-down migrate-create mock swagger clean deps \
+        run-http run-grpc run-graphql run-relay run-subscriber
 
-# Tools
-MOCKGEN=go run github.com/golang/mock/mockgen
-SWAG=swag
-MIGRATE=migrate
+help:
+	@echo "build              Build every binary into $(BIN_DIR)/ (stripped)"
+	@echo "check              vet + staticcheck + test across all modules"
+	@echo "test-unit          Unit tests (no Docker required)"
+	@echo "test-integration   Integration tests (testcontainers; needs Docker)"
+	@echo "migrate-up/down    Apply/revert migrations for every module"
+	@echo "migrate-create     Scaffold a migration: make migrate-create MODULE=api NAME=add_foo"
+	@echo "run-http|grpc|graphql|relay|subscriber   Run a server"
 
-# Database URL for migrations
-DB_URL=postgres://$(DB_USER):$(DB_PASSWORD)@$(DB_HOST):$(DB_PORT)/$(DB_NAME)?sslmode=disable
+## ---- build -----------------------------------------------------------------
+# -s strips the symbol table, -w strips DWARF. Required for release images.
+build:
+	@mkdir -p $(BIN_DIR)
+	go build $(BUILD_FLAGS) -o $(BIN_DIR)/http-server    ./api/cmd/http-server
+	go build $(BUILD_FLAGS) -o $(BIN_DIR)/grpc-server    ./api/cmd/grpc-server
+	go build $(BUILD_FLAGS) -o $(BIN_DIR)/graphql-server ./api/cmd/graphql-server
+	go build $(BUILD_FLAGS) -o $(BIN_DIR)/outbox-relay   ./outbox/cmd/relay
+	go build $(BUILD_FLAGS) -o $(BIN_DIR)/subscriber     ./subscribers/cmd/subscriber
 
-# Default command
-all: clean swagger mock test run
+## ---- quality ---------------------------------------------------------------
+vet:
+	@for m in $(MODULES); do echo "vet $$m"; (cd $$m && go vet ./...) || exit 1; done
 
-# Run the application
-run-http:
-	@echo "Running service..."
-	cd cmd/http-server && go run .
+staticcheck:
+	@for m in $(MODULES); do echo "staticcheck $$m"; (cd $$m && staticcheck ./...) || exit 1; done
 
-run-grpc:
-	@echo "Running service..."
-	cd cmd/grpc-server && go run .
+fieldalignment:
+	@for m in $(MODULES); do (cd $$m && go vet -vettool=$$(which fieldalignment) ./...) || exit 1; done
 
-run-graphql:
-	@echo "Running service..."
-	cd cmd/graphql-server && go run .
+check: vet staticcheck test
 
-# Run all tests (unit + integration)
+## ---- tests -----------------------------------------------------------------
 test: test-unit test-integration
-	@echo "All tests completed."
 
-# Run only unit tests
 test-unit:
-	@echo "Running unit tests..."
-	go test -v -count=1 ./tests/unit/... -cover
+	@for m in $(MODULES); do echo "unit: $$m"; (cd $$m && go test -count=1 -short ./...) || exit 1; done
 
-# Run only integration tests
 test-integration:
-	@echo "Running integration tests..."
-	go test -v -count=1 ./tests/integration/... -cover
+	@for m in $(MODULES); do echo "integration: $$m"; (cd $$m && go test -count=1 -run Integration ./...) || exit 1; done
 
-# Run tests with coverage report
 test-coverage:
-	@echo "Running tests with coverage..."
-	go test -v -count=1 ./... -coverprofile=coverage.out
-	go tool cover -html=coverage.out
+	go test -count=1 ./... -coverprofile=coverage.out
+	go tool cover -html=coverage.out -o coverage.html
 
-# Run unit tests with coverage report
-test-unit-coverage:
-	@echo "Running unit tests with coverage..."
-	go test -v -count=1 -run UnitTests ./tests/unit/... -coverprofile=unit-coverage.out
-	go tool cover -html=unit-coverage.out
-
-# Run integration tests with coverage report
-test-integration-coverage:
-	@echo "Running integration tests with coverage..."
-	go test -v -count=1 -run IntegrationTests ./tests/integration/... -coverprofile=integration-coverage.out
-	go tool cover -html=integration-coverage.out
-
-# Generate mocks
+## ---- codegen ---------------------------------------------------------------
 mock:
-	@echo "Generating mocks..."
-	$(MOCKGEN) -source=internal/service/event_service.go -destination=internal/service/mocks/event_service_mock.go -package=mocks
-	$(MOCKGEN) -source=internal/service/user_service.go -destination=internal/service/mocks/user_service_mock.go -package=mocks
-	$(MOCKGEN) -source=internal/service/role_service.go -destination=internal/service/mocks/role_service_mock.go -package=mocks	
-	$(MOCKGEN) -source=internal/service/permission_service.go -destination=internal/service/mocks/permission_service_mock.go -package=mocks
-	$(MOCKGEN) -source=pkg/telemetry/telemetryAdapter.go -destination=pkg/telemetry/mocks/telemetry_adapter_mock.go -package=mocks
+	go run github.com/golang/mock/mockgen -source=platform/telemetry/telemetryAdapter.go \
+		-destination=platform/telemetry/mocks/telemetry_adapter_mock.go -package=mocks
 
-# Generate Swagger documentation
 swagger:
-	@echo "Generating Swagger documentation..."
-	$(SWAG) init -g $(MAIN_FILE) -o docs && \
-	go run docs/scripts/add_xtags.go
+	cd api && swag init -g cmd/http-server/main.go -o docs && go run docs/scripts/add_xtags.go
 
-# Create a new migration
-migrate-create:
-	@read -p "Enter migration name: " name; \
-	$(MIGRATE) create -ext sql -dir $(MIGRATION_DIR) -seq $$name
-
-# Run migrations up
+## ---- migrations ------------------------------------------------------------
 migrate-up:
-	@echo "Running migrations up..."
-	@echo "Using database URL: $(DB_URL)"
-	$(MIGRATE) -path $(MIGRATION_DIR) -database "$(DB_URL)" up
+	@for d in $(MIGRATION_DIRS); do echo "migrate up: $$d"; migrate -path $$d -database "$(DB_URL)" up || exit 1; done
 
-# Run migrations down
 migrate-down:
-	@echo "Running migrations down..."
-	@echo "Using database URL: $(DB_URL)"
-	$(MIGRATE) -path $(MIGRATION_DIR) -database "$(DB_URL)" down
+	@for d in $(MIGRATION_DIRS); do echo "migrate down: $$d"; migrate -path $$d -database "$(DB_URL)" down 1 || exit 1; done
 
-# Install dependencies
+# usage: make migrate-create MODULE=api NAME=add_event_status
+migrate-create:
+	@test -n "$(MODULE)" || (echo "MODULE is required, e.g. MODULE=api" && exit 1)
+	@test -n "$(NAME)"   || (echo "NAME is required, e.g. NAME=add_event_status" && exit 1)
+	@dir=$$( [ "$(MODULE)" = "api" ] && echo api/internal/migrations || echo $(MODULE)/migrations ); \
+	migrate create -ext sql -dir $$dir -seq $(NAME)
+
+## ---- run -------------------------------------------------------------------
+run-http:       ; go run ./api/cmd/http-server
+run-grpc:       ; go run ./api/cmd/grpc-server
+run-graphql:    ; go run ./api/cmd/graphql-server
+run-relay:      ; go run ./outbox/cmd/relay
+run-subscriber: ; go run ./subscribers/cmd/subscriber
+
+## ---- housekeeping ----------------------------------------------------------
 deps:
-	@echo "Installing dependencies..."
-	go mod download
+	go work sync
 	go install github.com/golang/mock/mockgen@latest
 	go install github.com/swaggo/swag/cmd/swag@latest
 	go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@latest
+	go install honnef.co/go/tools/cmd/staticcheck@latest
+	go install golang.org/x/tools/go/analysis/passes/fieldalignment/cmd/fieldalignment@latest
 
-# Clean build artifacts
+# Deliberately narrow. The previous `clean` ran `rm -rf docs`, which deleted
+# docs/scripts/add_xtags.go — a hand-written file that `make swagger` then
+# tried to run. Only generated artefacts are removed here.
 clean:
-	@echo "Cleaning build artifacts..."
-	rm -f $(BINARY_NAME)
-	rm -rf docs
+	rm -rf $(BIN_DIR) coverage.out coverage.html
+	rm -f api/docs/docs.go api/docs/swagger.json api/docs/swagger.yaml
 	go clean
-
-# Build the application
-build:
-	@echo "Building application..."
-	go build -o $(BINARY_NAME) $(MAIN_FILE)
-
-# Show current configuration
-config:
-	@echo "Current configuration:"
-	@echo "  DB_USER: $(DB_USER)"
-	@echo "  DB_HOST: $(DB_HOST)"
-	@echo "  DB_PORT: $(DB_PORT)"
-	@echo "  DB_NAME: $(DB_NAME)"
-	@echo "  DB_URL:  $(DB_URL)"
-
-# Help command
-help:
-	@echo "Available commands:"
-	@echo "  make run                    - Run the application"
-	@echo "  make test                   - Run all tests (unit + integration)"
-	@echo "  make test-unit              - Run only unit tests"
-	@echo "  make test-integration       - Run only integration tests"
-	@echo "  make test-coverage          - Run all tests with coverage report"
-	@echo "  make test-unit-coverage     - Run unit tests with coverage report"
-	@echo "  make test-integration-coverage - Run integration tests with coverage report"
-	@echo "  make mock                   - Generate mocks"
-	@echo "  make swagger                - Generate Swagger documentation"
-	@echo "  make migrate-create         - Create a new migration"
-	@echo "  make migrate-up             - Run migrations up"
-	@echo "  make migrate-down           - Run migrations down"
-	@echo "  make deps                   - Install dependencies"
-	@echo "  make clean                  - Clean build artifacts"
-	@echo "  make build                  - Build the application"
-	@echo "  make config                 - Show current configuration"
-	@echo "  make all                    - Run clean, swagger, mock, test, and run"

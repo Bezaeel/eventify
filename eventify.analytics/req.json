@@ -1,0 +1,36 @@
+{
+  "type": "index",
+  "spec": {
+    "ioConfig": {
+      "type": "index",
+      "inputSource": {
+        "type": "firehose",
+        "firehose": {
+          "type": "http"
+        }
+      },
+      "inputFormat": {
+        "type": "json"
+      }
+    },
+    "dataSchema": {
+      "dataSource": "events",
+      "timestampSpec": {
+        "column": "timestamp",
+        "format": "iso"
+      },
+      "dimensionsSpec": {
+        "dimensions": [
+          "countryCode",
+          "occuredAt",
+          "type",
+          "createdBy",
+          "messageId"
+        ]
+      }
+    },
+    "tuningConfig": {
+      "type": "index"
+    }
+  }
+}
