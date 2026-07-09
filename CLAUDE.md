@@ -137,9 +137,20 @@ Each module also builds alone: `cd outbox && go build ./...`.
 | Feature handler (`internal/features/`) | **Integration**, testcontainers | It contains raw SQL. Mocks cannot validate a query. |
 | Transport adapter | **Unit** | Inject a handler func; assert decode/encode/status mapping. |
 | Subscriber handler | **Integration** | Raw SQL. Assert idempotency by dispatching the same MessageID twice. |
-| Relay | **Unit** | Inject a fake `relay.Publisher`. |
+| Relay | **Integration** | It drives `FOR UPDATE SKIP LOCKED` and real transactions. Inject a fake `relay.Publisher`, but keep the real database. |
+| `platform/apperrors`, registries | **Unit** | Pure. |
 
-Mirror the package path under `tests/unit/` or `tests/integration/`. Table-driven, sub-tests named with `t.Run`. `-count=1` to bypass the cache. Integration tests spin up a fresh container per suite.
+Transport `Handlers` structs hold **function values**, not concrete handler types, precisely so a unit test can inject a stub:
+
+```go
+v1events.Handlers{ Update: func(ctx, cmd) (Result, error) { return Result{}, apperrors.New(apperrors.NotFound, "") } }
+```
+
+Production wiring passes method values (`update.Handle`), and `transport/http.NewApp` hands the *same* value to v1 and v2.
+
+Mirror the package path under `tests/unit/` or `tests/integration/`. Table-driven, sub-tests named with `t.Run`. `-count=1` to bypass the cache. Integration tests spin up a fresh container per suite and guard with `testsupport.SkipUnlessDocker(t)`, so `make test-unit` (which passes `-short`) needs no Docker.
+
+Name integration tests `TestIntegration…` — `make test-integration` selects them with `-run Integration`.
 
 There are **no service mocks**, because there are no service interfaces. `mockgen` now generates exactly one mock: `ITelemetryAdapter`.
 

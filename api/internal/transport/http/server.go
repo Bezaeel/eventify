@@ -25,7 +25,7 @@ import (
 // NewApp builds the Fiber app with every route mounted.
 //
 // Handlers are constructed once, here, and shared by the versions that expose
-// them: v1 and v2 both receive the same UpdateEventHandler value. That is the
+// them: v1 and v2 both receive the same update.Handle method value. That is the
 // concrete form of "one use case, many transports".
 func NewApp(pool *pgxpool.Pool, jwtProvider auth.IJWTProvider, adapter telemetry.ITelemetryAdapter) *fiber.App {
 	app := fiber.New()
@@ -33,8 +33,8 @@ func NewApp(pool *pgxpool.Pool, jwtProvider auth.IJWTProvider, adapter telemetry
 	app.Use(cors.New())
 	app.Use(middleware.Telemetry(adapter))
 
-	// Feature handlers. CreateEventHandler takes the pool because it opens its
-	// own transaction to write the event and its outbox row atomically.
+	// CreateEventHandler takes the pool, not a Querier, because it opens its own
+	// transaction to write the event and its outbox row atomically.
 	create := events.NewCreateEventHandler(pool)
 	update := events.NewUpdateEventHandler(pool)
 	get := events.NewGetEventHandler(pool)
@@ -42,35 +42,35 @@ func NewApp(pool *pgxpool.Pool, jwtProvider auth.IJWTProvider, adapter telemetry
 	del := events.NewDeleteEventHandler(pool)
 
 	v1events.New(v1events.Handlers{
-		Create: create, Update: update, Get: get, List: list, Delete: del,
+		Create: create.Handle, Update: update.Handle, Get: get.Handle,
+		List: list.Handle, Delete: del.Handle,
 	}).Register(app, jwtProvider)
 
-	// Same update, get and list handler values as v1.
+	// The same update, get and list method values as v1.
 	v2events.New(v2events.Handlers{
-		Update: update, Get: get, List: list,
+		Update: update.Handle, Get: get.Handle, List: list.Handle,
 	}).Register(app, jwtProvider)
 
 	v1auth.New(v1auth.Handlers{
-		Login:       users.NewLoginHandler(pool, jwtProvider),
-		Signup:      users.NewSignupHandler(pool),
-		GetUser:     users.NewGetUserHandler(pool),
-		Permissions: users.NewGetUserPermissionsHandler(pool),
+		Login:   users.NewLoginHandler(pool, jwtProvider).Handle,
+		Signup:  users.NewSignupHandler(pool).Handle,
+		GetUser: users.NewGetUserHandler(pool).Handle,
 	}, jwtProvider).Register(app)
 
 	v1password.New(v1password.Handlers{
-		ChangePassword: users.NewChangePasswordHandler(pool),
+		ChangePassword: users.NewChangePasswordHandler(pool).Handle,
 	}, jwtProvider).Register(app)
 
 	v1admin.New(v1admin.Handlers{
-		ListRoles:        roles.NewListRolesHandler(pool),
-		CreateRole:       roles.NewCreateRoleHandler(pool),
-		AssignRole:       roles.NewAssignRoleHandler(pool),
-		RemoveRole:       roles.NewRemoveRoleHandler(pool),
-		GetUserRoles:     roles.NewGetUserRolesHandler(pool),
-		ListPermissions:  permissions.NewListPermissionsHandler(pool),
-		RolePermissions:  permissions.NewGetRolePermissionsHandler(pool),
-		AssignPermission: permissions.NewAssignPermissionHandler(pool),
-		RemovePermission: permissions.NewRemovePermissionHandler(pool),
+		ListRoles:        roles.NewListRolesHandler(pool).Handle,
+		CreateRole:       roles.NewCreateRoleHandler(pool).Handle,
+		AssignRole:       roles.NewAssignRoleHandler(pool).Handle,
+		RemoveRole:       roles.NewRemoveRoleHandler(pool).Handle,
+		GetUserRoles:     roles.NewGetUserRolesHandler(pool).Handle,
+		ListPermissions:  permissions.NewListPermissionsHandler(pool).Handle,
+		RolePermissions:  permissions.NewGetRolePermissionsHandler(pool).Handle,
+		AssignPermission: permissions.NewAssignPermissionHandler(pool).Handle,
+		RemovePermission: permissions.NewRemovePermissionHandler(pool).Handle,
 	}).Register(app, jwtProvider)
 
 	return app

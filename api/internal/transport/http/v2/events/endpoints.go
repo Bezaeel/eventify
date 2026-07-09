@@ -63,7 +63,7 @@ func toEventResponse(e domain.Event) eventResponse {
 // @Success 200 {object} listEventsResponse
 // @Router /api/v2/events [get]
 func (c *Controller) List(ctx *fiber.Ctx) error {
-	res, err := c.h.List.Handle(ctx.UserContext(), events.GetEventsQuery{
+	res, err := c.h.List(ctx.UserContext(), events.GetEventsQuery{
 		Limit:  ctx.QueryInt("limit", 0),
 		Offset: ctx.QueryInt("offset", 0),
 	})
@@ -103,7 +103,7 @@ func (c *Controller) Update(ctx *fiber.Ctx) error {
 	}
 
 	// The v2 DTO maps onto the v1 command. No new SQL.
-	if _, err := c.h.Update.Handle(ctx.UserContext(), events.UpdateEventCommand{
+	if _, err := c.h.Update(ctx.UserContext(), events.UpdateEventCommand{
 		EventID: id, Name: req.Name, Description: req.Description, Location: req.Location,
 		Date: req.Date, Organizer: req.Organiser, Category: req.Category,
 		Tags: req.Tags, Capacity: req.Capacity,
@@ -112,7 +112,7 @@ func (c *Controller) Update(ctx *fiber.Ctx) error {
 	}
 
 	// v2 returns the full event, so it reads back through the same Get handler.
-	e, err := c.h.Get.Handle(ctx.UserContext(), events.GetEventQuery{EventID: id})
+	e, err := c.h.Get(ctx.UserContext(), events.GetEventQuery{EventID: id})
 	if err != nil {
 		return httperr.Write(ctx, err)
 	}

@@ -3,7 +3,12 @@
     "allow": [
       "Bash(go build:*)",
       "Bash(go vet:*)",
-      "Bash(staticcheck:*)"
+      "Bash(go test:*)",
+      "Bash(staticcheck:*)",
+      "Bash(gofmt:*)",
+      "Bash(make check:*)",
+      "Bash(make test-unit:*)",
+      "Bash(make test-integration:*)"
     ]
   }
 }

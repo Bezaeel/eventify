@@ -14,9 +14,23 @@ The rule is mechanical: **does this code contain a SQL string?**
 | `api/internal/features/**` | Integration, testcontainers | Holds raw SQL. A mock cannot tell you the query is valid, hits an index, or matches the schema. |
 | `api/internal/transport/**` | Unit | Decode/encode/status mapping. Inject a handler func. |
 | `subscribers/internal/handler/**` | Integration | Holds raw SQL. Also assert idempotency. |
-| `outbox/relay` | Unit | Inject a fake `relay.Publisher`. |
+| `outbox/relay` | Integration, with a fake `relay.Publisher` | The publisher is faked; the database is real, because the relay's whole job is `FOR UPDATE SKIP LOCKED` inside a transaction. |
 | `outbox.Enqueue`, `FetchUnpublished` | Integration | Holds raw SQL, and `FOR UPDATE SKIP LOCKED` cannot be mocked. |
-| `platform/**` | Unit | Pure. |
+| `platform/**`, `handler.Registry` | Unit | Pure. |
+
+Name integration tests `TestIntegration…`: `make test-integration` selects them with `-run Integration`.
+
+## Does the test have teeth?
+
+A test that cannot fail is documentation, not verification. Before you trust a new integration test, break the thing it guards and watch it go red:
+
+```bash
+# remove `ON CONFLICT (message_id) DO NOTHING`, then:
+go test -run TestIntegrationEventCreatedV1_IsIdempotentOnMessageID ./tests/...
+# expect: FAIL ... duplicate key value violates unique constraint
+```
+
+Then restore the code. Do this once per test that guards a specific past bug.
 
 **There are no service mocks.** There are no service interfaces to mock — that layer was deliberately removed. `mockgen` generates exactly one mock, for `ITelemetryAdapter`. If you find yourself wanting to mock a feature handler in order to test another feature handler, the second one is doing too much.
 

@@ -54,11 +54,11 @@ func main() {
 	server := grpc.NewServer(grpc.UnaryInterceptor(interceptors.Auth(jwtProvider)))
 
 	proto.RegisterEventServiceServer(server, handlers.NewEventHandler(handlers.Handlers{
-		Create: events.NewCreateEventHandler(pool),
-		Update: events.NewUpdateEventHandler(pool),
-		Get:    events.NewGetEventHandler(pool),
-		List:   events.NewGetEventsHandler(pool),
-		Delete: events.NewDeleteEventHandler(pool),
+		Create: events.NewCreateEventHandler(pool).Handle,
+		Update: events.NewUpdateEventHandler(pool).Handle,
+		Get:    events.NewGetEventHandler(pool).Handle,
+		List:   events.NewGetEventsHandler(pool).Handle,
+		Delete: events.NewDeleteEventHandler(pool).Handle,
 	}))
 	reflection.Register(server)
 

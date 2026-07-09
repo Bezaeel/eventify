@@ -88,7 +88,7 @@ func (r *mutationResolver) CreateEvent(ctx context.Context, input models.CreateE
 		return nil, gqlError(apperrors.New(apperrors.Invalid, "date must be RFC3339"))
 	}
 
-	res, err := r.Create.Handle(ctx, events.CreateEventCommand{
+	res, err := r.Create(ctx, events.CreateEventCommand{
 		Name: input.Name, Description: input.Description, Date: date,
 		Location: input.Location, Organizer: input.Organizer, Category: input.Category,
 		Tags: input.Tags, Capacity: input.Capacity,
@@ -115,7 +115,7 @@ func (r *mutationResolver) UpdateEvent(ctx context.Context, id string, input mod
 	// total. Read the current row, apply the patch, then write. The read goes
 	// through the Get handler rather than a second SQL statement here, because
 	// this file is a transport adapter and must contain no SQL.
-	current, err := r.Get.Handle(ctx, events.GetEventQuery{EventID: eventID})
+	current, err := r.Get(ctx, events.GetEventQuery{EventID: eventID})
 	if err != nil {
 		return nil, gqlError(err)
 	}
@@ -160,11 +160,11 @@ func (r *mutationResolver) UpdateEvent(ctx context.Context, id string, input mod
 		cmd.Capacity = *input.Capacity
 	}
 
-	if _, err := r.Update.Handle(ctx, cmd); err != nil {
+	if _, err := r.Update(ctx, cmd); err != nil {
 		return nil, gqlError(err)
 	}
 
-	updated, err := r.Get.Handle(ctx, events.GetEventQuery{EventID: eventID})
+	updated, err := r.Get(ctx, events.GetEventQuery{EventID: eventID})
 	if err != nil {
 		return nil, gqlError(err)
 	}
@@ -181,7 +181,7 @@ func (r *mutationResolver) DeleteEvent(ctx context.Context, id string) (*models.
 		return nil, gqlError(apperrors.New(apperrors.Invalid, "invalid event id"))
 	}
 
-	if err := r.Delete.Handle(ctx, events.DeleteEventCommand{EventID: eventID}); err != nil {
+	if err := r.Delete(ctx, events.DeleteEventCommand{EventID: eventID}); err != nil {
 		return nil, gqlError(err)
 	}
 	return &models.DeleteEventResponse{Message: "event deleted"}, nil
@@ -195,7 +195,7 @@ func (r *queryResolver) Event(ctx context.Context, id string) (*domain.Event, er
 		return nil, gqlError(apperrors.New(apperrors.Invalid, "invalid event id"))
 	}
 
-	e, err := r.Get.Handle(ctx, events.GetEventQuery{EventID: eventID})
+	e, err := r.Get(ctx, events.GetEventQuery{EventID: eventID})
 	if err != nil {
 		if apperrors.KindOf(err) == apperrors.NotFound {
 			// `event(id:)` is nullable in the schema: a miss is null, not an error.
@@ -218,7 +218,7 @@ func (r *queryResolver) Events(ctx context.Context, page *int, limit *int) (*mod
 	// The old resolver called GetAllEvents, which SELECTed every row in the
 	// table, reported len(events) as the total, and ignored page and limit
 	// entirely. Paging happens in SQL now.
-	res, err := r.List.Handle(ctx, events.GetEventsQuery{Limit: l, Offset: (p - 1) * l})
+	res, err := r.List(ctx, events.GetEventsQuery{Limit: l, Offset: (p - 1) * l})
 	if err != nil {
 		return nil, gqlError(err)
 	}

@@ -2,8 +2,10 @@
 package auth
 
 import (
+	"context"
 	"time"
 
+	"eventify/api/internal/domain"
 	"eventify/api/internal/features/users"
 	sharedauth "eventify/api/internal/shared/auth"
 	"eventify/api/internal/transport/http/httperr"
@@ -14,12 +16,12 @@ import (
 	"github.com/google/uuid"
 )
 
-// Handlers are the use cases this controller exposes.
+// Handlers are the use cases this controller exposes, as function values so a
+// test can inject a stub. See the Handlers doc in transport/http/v1/events.
 type Handlers struct {
-	Login       users.LoginHandler
-	Signup      users.SignupHandler
-	GetUser     users.GetUserHandler
-	Permissions users.GetUserPermissionsHandler
+	Login   func(context.Context, users.LoginCommand) (users.LoginResult, error)
+	Signup  func(context.Context, users.SignupCommand) (users.SignupResult, error)
+	GetUser func(context.Context, users.GetUserQuery) (domain.User, error)
 }
 
 // Controller adapts HTTP onto the user use cases.
@@ -94,7 +96,7 @@ func (c *Controller) Login(ctx *fiber.Ctx) error {
 		return httperr.Write(ctx, apperrors.New(apperrors.Invalid, "invalid request body"))
 	}
 
-	res, err := c.h.Login.Handle(ctx.UserContext(), users.LoginCommand{
+	res, err := c.h.Login(ctx.UserContext(), users.LoginCommand{
 		Email: req.Email, Password: req.Password,
 	})
 	if err != nil {
@@ -123,7 +125,7 @@ func (c *Controller) Signup(ctx *fiber.Ctx) error {
 		return httperr.Write(ctx, apperrors.New(apperrors.Invalid, "invalid request body"))
 	}
 
-	res, err := c.h.Signup.Handle(ctx.UserContext(), users.SignupCommand{
+	res, err := c.h.Signup(ctx.UserContext(), users.SignupCommand{
 		Email: req.Email, Password: req.Password,
 		FirstName: req.FirstName, LastName: req.LastName,
 	})
@@ -153,7 +155,7 @@ func (c *Controller) Me(ctx *fiber.Ctx) error {
 		return httperr.Write(ctx, apperrors.New(apperrors.Unauthorized, "authentication required"))
 	}
 
-	u, err := c.h.GetUser.Handle(ctx.UserContext(), users.GetUserQuery{UserID: claims.UserID})
+	u, err := c.h.GetUser(ctx.UserContext(), users.GetUserQuery{UserID: claims.UserID})
 	if err != nil {
 		return httperr.Write(ctx, err)
 	}

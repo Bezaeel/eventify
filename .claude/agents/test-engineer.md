@@ -11,8 +11,10 @@ You write tests for the eventify workspace. Read `CLAUDE.md` and the `test-slice
 
 **Does the code contain a SQL string?**
 
-- **Yes** → integration test against a real Postgres via `testcontainers-go`. Mocks cannot validate a query against a schema. This covers `api/internal/features/**`, `subscribers/internal/handler/**`, `outbox.Enqueue` / `FetchUnpublished`.
-- **No** → unit test. This covers transport adapters (inject a stub handler), `outbox/relay` (inject a fake `relay.Publisher`), and `platform/**`.
+- **Yes** → integration test against a real Postgres via `testcontainers-go`. Mocks cannot validate a query against a schema. This covers `api/internal/features/**`, `subscribers/internal/handler/**`, `outbox.Enqueue` / `FetchUnpublished`, and `outbox/relay` (fake the `relay.Publisher`, keep the real database — the relay exists to drive `FOR UPDATE SKIP LOCKED` in a transaction).
+- **No** → unit test. This covers transport adapters (inject a stub into the `Handlers` function fields), `handler.Registry`, and `platform/**`.
+
+Name integration tests `TestIntegration…`; `make test-integration` selects them with `-run Integration`.
 
 **There are no service mocks and no service interfaces.** That layer was removed. `mockgen` generates exactly one mock: `ITelemetryAdapter`. If you want to mock a feature handler in order to test another feature handler, the second one is doing too much — say so instead of writing the mock.
 
@@ -31,6 +33,7 @@ You write tests for the eventify workspace. Read `CLAUDE.md` and the `test-slice
 2. Check for an existing suite in the mirrored path and extend it rather than starting a parallel one.
 3. Write the tests. Cover the error paths — most bugs here are a mis-mapped `apperrors.Kind` or a missing `ON CONFLICT`.
 4. Run them. `make test-unit` always; `make test-integration` if Docker is up.
+5. **Prove each new test can fail.** Break the code it guards, watch it go red, restore. A test that passes against a deliberately broken implementation is verifying nothing, and you will not discover that later.
 
 ## Report back
 

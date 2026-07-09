@@ -6,6 +6,9 @@
 package events
 
 import (
+	"context"
+
+	"eventify/api/internal/domain"
 	"eventify/api/internal/features/events"
 	"eventify/api/internal/shared/auth"
 	"eventify/api/internal/shared/constants"
@@ -15,12 +18,18 @@ import (
 )
 
 // Handlers are the use cases this controller exposes.
+//
+// They are function values, not concrete handler structs, so a test can inject
+// a stub that returns a chosen apperrors.Kind and assert the status mapping
+// without touching a database. Production wiring passes method values:
+//
+//	Update: events.NewUpdateEventHandler(pool).Handle
 type Handlers struct {
-	Create events.CreateEventHandler
-	Update events.UpdateEventHandler
-	Get    events.GetEventHandler
-	List   events.GetEventsHandler
-	Delete events.DeleteEventHandler
+	Create func(context.Context, events.CreateEventCommand) (events.CreateEventResult, error)
+	Update func(context.Context, events.UpdateEventCommand) (events.UpdateEventResult, error)
+	Get    func(context.Context, events.GetEventQuery) (domain.Event, error)
+	List   func(context.Context, events.GetEventsQuery) (events.GetEventsResult, error)
+	Delete func(context.Context, events.DeleteEventCommand) error
 }
 
 // Controller adapts HTTP v1 onto Handlers.

@@ -2,6 +2,8 @@
 package admin
 
 import (
+	"context"
+
 	"eventify/api/internal/domain"
 	"eventify/api/internal/features/permissions"
 	"eventify/api/internal/features/roles"
@@ -15,17 +17,18 @@ import (
 	"github.com/google/uuid"
 )
 
-// Handlers are the use cases this controller exposes.
+// Handlers are the use cases this controller exposes, as function values so a
+// test can inject a stub. See the Handlers doc in transport/http/v1/events.
 type Handlers struct {
-	ListRoles         roles.ListRolesHandler
-	CreateRole        roles.CreateRoleHandler
-	AssignRole        roles.AssignRoleHandler
-	RemoveRole        roles.RemoveRoleHandler
-	GetUserRoles      roles.GetUserRolesHandler
-	ListPermissions   permissions.ListPermissionsHandler
-	RolePermissions   permissions.GetRolePermissionsHandler
-	AssignPermission  permissions.AssignPermissionHandler
-	RemovePermission  permissions.RemovePermissionHandler
+	ListRoles        func(context.Context) ([]domain.Role, error)
+	CreateRole       func(context.Context, roles.CreateRoleCommand) (roles.CreateRoleResult, error)
+	AssignRole       func(context.Context, roles.AssignRoleCommand) error
+	RemoveRole       func(context.Context, roles.RemoveRoleCommand) error
+	GetUserRoles     func(context.Context, roles.GetUserRolesQuery) ([]domain.Role, error)
+	ListPermissions  func(context.Context) ([]domain.Permission, error)
+	RolePermissions  func(context.Context, permissions.GetRolePermissionsQuery) ([]domain.Permission, error)
+	AssignPermission func(context.Context, permissions.AssignPermissionCommand) error
+	RemovePermission func(context.Context, permissions.RemovePermissionCommand) error
 }
 
 // Controller adapts HTTP onto the admin use cases.
@@ -105,7 +108,7 @@ func toPermissions(in []domain.Permission) []permissionResponse {
 // ---- endpoints -------------------------------------------------------------
 
 func (c *Controller) ListRoles(ctx *fiber.Ctx) error {
-	rs, err := c.h.ListRoles.Handle(ctx.UserContext())
+	rs, err := c.h.ListRoles(ctx.UserContext())
 	if err != nil {
 		return httperr.Write(ctx, err)
 	}
@@ -118,7 +121,7 @@ func (c *Controller) CreateRole(ctx *fiber.Ctx) error {
 		return httperr.Write(ctx, apperrors.New(apperrors.Invalid, "invalid request body"))
 	}
 
-	res, err := c.h.CreateRole.Handle(ctx.UserContext(), roles.CreateRoleCommand{
+	res, err := c.h.CreateRole(ctx.UserContext(), roles.CreateRoleCommand{
 		Name: req.Name, Description: req.Description,
 	})
 	if err != nil {
@@ -133,7 +136,7 @@ func (c *Controller) RolePermissions(ctx *fiber.Ctx) error {
 		return httperr.Write(ctx, apperrors.New(apperrors.Invalid, "invalid role id"))
 	}
 
-	ps, err := c.h.RolePermissions.Handle(ctx.UserContext(), permissions.GetRolePermissionsQuery{RoleID: id})
+	ps, err := c.h.RolePermissions(ctx.UserContext(), permissions.GetRolePermissionsQuery{RoleID: id})
 	if err != nil {
 		return httperr.Write(ctx, err)
 	}
@@ -146,7 +149,7 @@ func (c *Controller) GetUserRoles(ctx *fiber.Ctx) error {
 		return httperr.Write(ctx, apperrors.New(apperrors.Invalid, "invalid user id"))
 	}
 
-	rs, err := c.h.GetUserRoles.Handle(ctx.UserContext(), roles.GetUserRolesQuery{UserID: id})
+	rs, err := c.h.GetUserRoles(ctx.UserContext(), roles.GetUserRolesQuery{UserID: id})
 	if err != nil {
 		return httperr.Write(ctx, err)
 	}
@@ -159,7 +162,7 @@ func (c *Controller) AssignRole(ctx *fiber.Ctx) error {
 		return httperr.Write(ctx, apperrors.New(apperrors.Invalid, "invalid request body"))
 	}
 
-	if err := c.h.AssignRole.Handle(ctx.UserContext(), roles.AssignRoleCommand{
+	if err := c.h.AssignRole(ctx.UserContext(), roles.AssignRoleCommand{
 		UserID: req.UserID, RoleID: req.RoleID,
 	}); err != nil {
 		return httperr.Write(ctx, err)
@@ -173,7 +176,7 @@ func (c *Controller) RemoveRole(ctx *fiber.Ctx) error {
 		return httperr.Write(ctx, apperrors.New(apperrors.Invalid, "invalid request body"))
 	}
 
-	if err := c.h.RemoveRole.Handle(ctx.UserContext(), roles.RemoveRoleCommand{
+	if err := c.h.RemoveRole(ctx.UserContext(), roles.RemoveRoleCommand{
 		UserID: req.UserID, RoleID: req.RoleID,
 	}); err != nil {
 		return httperr.Write(ctx, err)
@@ -182,7 +185,7 @@ func (c *Controller) RemoveRole(ctx *fiber.Ctx) error {
 }
 
 func (c *Controller) ListPermissions(ctx *fiber.Ctx) error {
-	ps, err := c.h.ListPermissions.Handle(ctx.UserContext())
+	ps, err := c.h.ListPermissions(ctx.UserContext())
 	if err != nil {
 		return httperr.Write(ctx, err)
 	}
@@ -195,7 +198,7 @@ func (c *Controller) AssignPermission(ctx *fiber.Ctx) error {
 		return httperr.Write(ctx, apperrors.New(apperrors.Invalid, "invalid request body"))
 	}
 
-	if err := c.h.AssignPermission.Handle(ctx.UserContext(), permissions.AssignPermissionCommand{
+	if err := c.h.AssignPermission(ctx.UserContext(), permissions.AssignPermissionCommand{
 		RoleID: req.RoleID, PermissionID: req.PermissionID,
 	}); err != nil {
 		return httperr.Write(ctx, err)
@@ -209,7 +212,7 @@ func (c *Controller) RemovePermission(ctx *fiber.Ctx) error {
 		return httperr.Write(ctx, apperrors.New(apperrors.Invalid, "invalid request body"))
 	}
 
-	if err := c.h.RemovePermission.Handle(ctx.UserContext(), permissions.RemovePermissionCommand{
+	if err := c.h.RemovePermission(ctx.UserContext(), permissions.RemovePermissionCommand{
 		RoleID: req.RoleID, PermissionID: req.PermissionID,
 	}); err != nil {
 		return httperr.Write(ctx, err)

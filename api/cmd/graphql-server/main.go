@@ -52,13 +52,13 @@ func main() {
 
 	telemetry.AddTelemetry("eventify-graphql")
 
-	resolver := resolvers.NewResolver(
-		events.NewCreateEventHandler(pool),
-		events.NewUpdateEventHandler(pool),
-		events.NewGetEventHandler(pool),
-		events.NewGetEventsHandler(pool),
-		events.NewDeleteEventHandler(pool),
-	)
+	resolver := &resolvers.Resolver{
+		Create: events.NewCreateEventHandler(pool).Handle,
+		Update: events.NewUpdateEventHandler(pool).Handle,
+		Get:    events.NewGetEventHandler(pool).Handle,
+		List:   events.NewGetEventsHandler(pool).Handle,
+		Delete: events.NewDeleteEventHandler(pool).Handle,
+	}
 
 	srv := handler.NewDefaultServer(generated.NewExecutableSchema(generated.Config{Resolvers: resolver}))
 

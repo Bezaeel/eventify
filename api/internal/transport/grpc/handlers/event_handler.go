@@ -20,13 +20,14 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
-// Handlers are the use cases this service exposes.
+// Handlers are the use cases this service exposes, as function values so a test
+// can inject a stub and assert the codes.Code mapping without a database.
 type Handlers struct {
-	Create events.CreateEventHandler
-	Update events.UpdateEventHandler
-	Get    events.GetEventHandler
-	List   events.GetEventsHandler
-	Delete events.DeleteEventHandler
+	Create func(context.Context, events.CreateEventCommand) (events.CreateEventResult, error)
+	Update func(context.Context, events.UpdateEventCommand) (events.UpdateEventResult, error)
+	Get    func(context.Context, events.GetEventQuery) (domain.Event, error)
+	List   func(context.Context, events.GetEventsQuery) (events.GetEventsResult, error)
+	Delete func(context.Context, events.DeleteEventCommand) error
 }
 
 // EventHandler implements proto.EventServiceServer.
@@ -90,7 +91,7 @@ func (h *EventHandler) CreateEvent(ctx context.Context, req *proto.CreateEventRe
 	}
 	claims, _ := interceptors.Claims(ctx)
 
-	res, err := h.h.Create.Handle(ctx, events.CreateEventCommand{
+	res, err := h.h.Create(ctx, events.CreateEventCommand{
 		Name: req.Name, Description: req.Description, Date: req.Date.AsTime(),
 		Location: req.Location, Organizer: req.Organizer, Category: req.Category,
 		Tags: req.Tags, Capacity: int(req.Capacity),
@@ -110,7 +111,7 @@ func (h *EventHandler) GetEvent(ctx context.Context, req *proto.GetEventRequest)
 		return nil, status.Error(codes.InvalidArgument, "invalid event id")
 	}
 
-	e, err := h.h.Get.Handle(ctx, events.GetEventQuery{EventID: id})
+	e, err := h.h.Get(ctx, events.GetEventQuery{EventID: id})
 	if err != nil {
 		return nil, grpcError(err)
 	}
@@ -128,7 +129,7 @@ func (h *EventHandler) UpdateEvent(ctx context.Context, req *proto.UpdateEventRe
 		return nil, status.Error(codes.InvalidArgument, "invalid event id")
 	}
 
-	if _, err := h.h.Update.Handle(ctx, events.UpdateEventCommand{
+	if _, err := h.h.Update(ctx, events.UpdateEventCommand{
 		EventID: id, Name: req.Name, Description: req.Description, Date: req.Date.AsTime(),
 		Location: req.Location, Organizer: req.Organizer, Category: req.Category,
 		Tags: req.Tags, Capacity: int(req.Capacity),
@@ -136,7 +137,7 @@ func (h *EventHandler) UpdateEvent(ctx context.Context, req *proto.UpdateEventRe
 		return nil, grpcError(err)
 	}
 
-	e, err := h.h.Get.Handle(ctx, events.GetEventQuery{EventID: id})
+	e, err := h.h.Get(ctx, events.GetEventQuery{EventID: id})
 	if err != nil {
 		return nil, grpcError(err)
 	}
@@ -154,7 +155,7 @@ func (h *EventHandler) DeleteEvent(ctx context.Context, req *proto.DeleteEventRe
 		return nil, status.Error(codes.InvalidArgument, "invalid event id")
 	}
 
-	if err := h.h.Delete.Handle(ctx, events.DeleteEventCommand{EventID: id}); err != nil {
+	if err := h.h.Delete(ctx, events.DeleteEventCommand{EventID: id}); err != nil {
 		return nil, grpcError(err)
 	}
 	return &proto.DeleteEventResponse{Message: "event deleted"}, nil
@@ -170,7 +171,7 @@ func (h *EventHandler) ListEvents(ctx context.Context, req *proto.ListEventsRequ
 		limit = 50
 	}
 
-	res, err := h.h.List.Handle(ctx, events.GetEventsQuery{Limit: limit, Offset: (page - 1) * limit})
+	res, err := h.h.List(ctx, events.GetEventsQuery{Limit: limit, Offset: (page - 1) * limit})
 	if err != nil {
 		return nil, grpcError(err)
 	}

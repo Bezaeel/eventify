@@ -16,6 +16,9 @@
 package events
 
 import (
+	"context"
+
+	"eventify/api/internal/domain"
 	"eventify/api/internal/features/events"
 	"eventify/api/internal/shared/auth"
 	"eventify/api/internal/shared/constants"
@@ -24,11 +27,14 @@ import (
 	"github.com/gofiber/fiber/v2"
 )
 
-// Handlers are the use cases this controller exposes. Same types as v1.
+// Handlers are the use cases this controller exposes.
+//
+// Identical signatures to v1's: both versions are handed the very same function
+// values by transport/http.NewApp.
 type Handlers struct {
-	Update events.UpdateEventHandler
-	Get    events.GetEventHandler
-	List   events.GetEventsHandler
+	Update func(context.Context, events.UpdateEventCommand) (events.UpdateEventResult, error)
+	Get    func(context.Context, events.GetEventQuery) (domain.Event, error)
+	List   func(context.Context, events.GetEventsQuery) (events.GetEventsResult, error)
 }
 
 // Controller adapts HTTP v2 onto Handlers.

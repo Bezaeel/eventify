@@ -76,7 +76,7 @@ func toEventResponse(e domain.Event) eventResponse {
 // @Success 200 {object} listEventsResponse
 // @Router /api/v1/events [get]
 func (c *Controller) List(ctx *fiber.Ctx) error {
-	res, err := c.h.List.Handle(ctx.UserContext(), events.GetEventsQuery{
+	res, err := c.h.List(ctx.UserContext(), events.GetEventsQuery{
 		Limit:  ctx.QueryInt("limit", 0),
 		Offset: ctx.QueryInt("offset", 0),
 	})
@@ -106,7 +106,7 @@ func (c *Controller) Get(ctx *fiber.Ctx) error {
 		return httperr.Write(ctx, apperrors.New(apperrors.Invalid, "invalid event id"))
 	}
 
-	e, err := c.h.Get.Handle(ctx.UserContext(), events.GetEventQuery{EventID: id})
+	e, err := c.h.Get(ctx.UserContext(), events.GetEventQuery{EventID: id})
 	if err != nil {
 		return httperr.Write(ctx, err)
 	}
@@ -134,7 +134,7 @@ func (c *Controller) Create(ctx *fiber.Ctx) error {
 		return httperr.Write(ctx, apperrors.New(apperrors.Unauthorized, "authentication required"))
 	}
 
-	res, err := c.h.Create.Handle(ctx.UserContext(), events.CreateEventCommand{
+	res, err := c.h.Create(ctx.UserContext(), events.CreateEventCommand{
 		Name: req.Name, Description: req.Description, Location: req.Location,
 		Date: req.Date, Organizer: req.Organizer, Category: req.Category,
 		Tags: req.Tags, Capacity: req.Capacity,
@@ -172,7 +172,7 @@ func (c *Controller) Update(ctx *fiber.Ctx) error {
 		return httperr.Write(ctx, apperrors.Wrap(apperrors.Invalid, "invalid request body", err))
 	}
 
-	res, err := c.h.Update.Handle(ctx.UserContext(), events.UpdateEventCommand{
+	res, err := c.h.Update(ctx.UserContext(), events.UpdateEventCommand{
 		EventID: id, Name: req.Name, Description: req.Description, Location: req.Location,
 		Date: req.Date, Organizer: req.Organizer, Category: req.Category,
 		Tags: req.Tags, Capacity: req.Capacity,
@@ -198,7 +198,7 @@ func (c *Controller) Delete(ctx *fiber.Ctx) error {
 		return httperr.Write(ctx, apperrors.New(apperrors.Invalid, "invalid event id"))
 	}
 
-	if err := c.h.Delete.Handle(ctx.UserContext(), events.DeleteEventCommand{EventID: id}); err != nil {
+	if err := c.h.Delete(ctx.UserContext(), events.DeleteEventCommand{EventID: id}); err != nil {
 		return httperr.Write(ctx, err)
 	}
 	return ctx.SendStatus(fiber.StatusNoContent)

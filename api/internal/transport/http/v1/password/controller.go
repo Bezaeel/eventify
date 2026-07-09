@@ -2,6 +2,8 @@
 package password
 
 import (
+	"context"
+
 	"eventify/api/internal/features/users"
 	sharedauth "eventify/api/internal/shared/auth"
 	"eventify/api/internal/transport/http/httperr"
@@ -11,9 +13,10 @@ import (
 	"github.com/gofiber/fiber/v2"
 )
 
-// Handlers are the use cases this controller exposes.
+// Handlers are the use cases this controller exposes, as function values so a
+// test can inject a stub. See the Handlers doc in transport/http/v1/events.
 type Handlers struct {
-	ChangePassword users.ChangePasswordHandler
+	ChangePassword func(context.Context, users.ChangePasswordCommand) error
 }
 
 // Controller adapts HTTP onto password rotation.
@@ -75,7 +78,7 @@ func (c *Controller) Change(ctx *fiber.Ctx) error {
 		return httperr.Write(ctx, apperrors.New(apperrors.Invalid, "invalid request body"))
 	}
 
-	err := c.h.ChangePassword.Handle(ctx.UserContext(), users.ChangePasswordCommand{
+	err := c.h.ChangePassword(ctx.UserContext(), users.ChangePasswordCommand{
 		UserID:          claims.UserID,
 		CurrentPassword: req.CurrentPassword,
 		NewPassword:     req.NewPassword,

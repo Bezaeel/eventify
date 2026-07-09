@@ -4,29 +4,21 @@ package resolvers
 // It is the dependency-injection seam for the GraphQL server.
 
 import (
+	"context"
+
+	"eventify/api/internal/domain"
 	"eventify/api/internal/features/events"
 )
 
 // Resolver holds the use cases the GraphQL schema exposes.
 //
-// It holds feature handlers, not a service — the very same CreateEventHandler
-// value the HTTP and gRPC adapters hold. GraphQL is one more edge over one
-// implementation.
+// They are function values, not services — the very same handler methods the
+// HTTP and gRPC adapters are wired with. GraphQL is one more edge over one
+// implementation, and a test can inject stubs here.
 type Resolver struct {
-	Create events.CreateEventHandler
-	Update events.UpdateEventHandler
-	Get    events.GetEventHandler
-	List   events.GetEventsHandler
-	Delete events.DeleteEventHandler
-}
-
-// NewResolver builds the root resolver.
-func NewResolver(
-	create events.CreateEventHandler,
-	update events.UpdateEventHandler,
-	get events.GetEventHandler,
-	list events.GetEventsHandler,
-	del events.DeleteEventHandler,
-) *Resolver {
-	return &Resolver{Create: create, Update: update, Get: get, List: list, Delete: del}
+	Create func(context.Context, events.CreateEventCommand) (events.CreateEventResult, error)
+	Update func(context.Context, events.UpdateEventCommand) (events.UpdateEventResult, error)
+	Get    func(context.Context, events.GetEventQuery) (domain.Event, error)
+	List   func(context.Context, events.GetEventsQuery) (events.GetEventsResult, error)
+	Delete func(context.Context, events.DeleteEventCommand) error
 }
