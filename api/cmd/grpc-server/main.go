@@ -1,85 +1,85 @@
+// Command grpc-server serves the gRPC API.
 package main
 
 import (
-	"eventify/api/grpc/handlers"
-	"eventify/api/grpc/proto"
-	"eventify/internal/service"
-	"eventify/internal/shared/config"
-	"eventify/pkg/database"
-	"eventify/pkg/logger"
-	"eventify/pkg/telemetry"
-	"fmt"
+	"context"
 	"net"
 	"os"
 	"os/signal"
 	"syscall"
+
+	"eventify/api/internal/features/events"
+	"eventify/api/internal/shared/auth"
+	"eventify/api/internal/shared/config"
+	"eventify/api/internal/transport/grpc/handlers"
+	"eventify/api/internal/transport/grpc/interceptors"
+	"eventify/api/internal/transport/grpc/proto"
+	"eventify/platform/logger"
+	"eventify/platform/postgres"
+	"eventify/platform/telemetry"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/reflection"
 )
 
 func main() {
-	// Initialize structured logger
 	log := logger.New(true)
 
-	// Load configuration
-	cfg, err := config.LoadConfig()
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	cfg, err := config.Load()
 	if err != nil {
-		log.Error("cannot load config")
+		log.ErrorWithError("load config", err)
 		os.Exit(1)
 	}
 
-	// Connect to database
-	db, err := database.NewPostgresConnection(cfg)
+	pool, err := postgres.NewPool(ctx, cfg.DatabaseDSN)
 	if err != nil {
-		log.Error("cannot connect to database")
+		log.ErrorWithError("connect postgres", err)
+		os.Exit(1)
+	}
+	defer pool.Close()
+
+	jwtProvider, err := auth.NewJWTProvider(cfg.JWTSecret, cfg.JWTExpiryMins, "eventify", "eventify-api")
+	if err != nil {
+		log.ErrorWithError("configure jwt", err)
 		os.Exit(1)
 	}
 
-	// Initialize telemetry
 	telemetry.AddTelemetry("eventify-grpc")
-	telemetryAdapter := telemetry.NewTelemetryAdapter()
 
-	// Initialize services
-	eventService := service.NewEventService(db, log, telemetryAdapter)
+	// The auth interceptor is not optional: without it every RPC on this port is
+	// unauthenticated, which is how the service shipped before.
+	server := grpc.NewServer(grpc.UnaryInterceptor(interceptors.Auth(jwtProvider)))
 
-	// Initialize gRPC server
-	grpcServer := grpc.NewServer()
+	proto.RegisterEventServiceServer(server, handlers.NewEventHandler(handlers.Handlers{
+		Create: events.NewCreateEventHandler(pool),
+		Update: events.NewUpdateEventHandler(pool),
+		Get:    events.NewGetEventHandler(pool),
+		List:   events.NewGetEventsHandler(pool),
+		Delete: events.NewDeleteEventHandler(pool),
+	}))
+	reflection.Register(server)
 
-	// Register services
-	eventHandler := handlers.NewEventHandler(eventService, telemetryAdapter)
-	proto.RegisterEventServiceServer(grpcServer, eventHandler)
-
-	// Enable reflection for development
-	reflection.Register(grpcServer)
-
-	// Start server
-	port := ":3002"
-	lis, err := net.Listen("tcp", port)
+	lis, err := net.Listen("tcp", ":"+cfg.GRPCPort)
 	if err != nil {
-		log.Error("failed to listen")
+		log.ErrorWithError("listen", err)
 		os.Exit(1)
 	}
-
-	log.Info(fmt.Sprintf("Starting gRPC server on %s", port))
-
-	// Setup graceful shutdown
-	c := make(chan os.Signal, 1)
-	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
 
 	go func() {
-		<-c
-		log.Info("Shutting down gRPC server gracefully...")
-		grpcServer.GracefulStop()
+		<-ctx.Done()
+		log.Info("shutting down grpc server")
+		server.GracefulStop()
 		if err := telemetry.ShutdownTracer(); err != nil {
-			log.ErrorWithError("Error shutting down tracer", err)
+			log.ErrorWithError("shutdown tracer", err)
 		}
-		os.Exit(0)
 	}()
 
-	// Start the server
-	if err := grpcServer.Serve(lis); err != nil {
-		log.Error("failed to serve")
+	log.Info("grpc server listening on :" + cfg.GRPCPort)
+	if err := server.Serve(lis); err != nil {
+		log.ErrorWithError("grpc server stopped", err)
 		os.Exit(1)
 	}
 }

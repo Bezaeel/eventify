@@ -1,18 +1,24 @@
+// Command graphql-server serves the GraphQL API.
 package main
 
 import (
-	"eventify/api/graphql/generated"
-	"eventify/api/graphql/resolvers"
-	"eventify/internal/service"
-	"eventify/internal/shared/config"
-	"eventify/pkg/database"
-	"eventify/pkg/logger"
-	"eventify/pkg/telemetry"
-	"fmt"
+	"context"
+	"errors"
 	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
+
+	"eventify/api/internal/features/events"
+	"eventify/api/internal/shared/auth"
+	"eventify/api/internal/shared/config"
+	"eventify/api/internal/transport/graphql/generated"
+	gqlmiddleware "eventify/api/internal/transport/graphql/middleware"
+	"eventify/api/internal/transport/graphql/resolvers"
+	"eventify/platform/logger"
+	"eventify/platform/postgres"
+	"eventify/platform/telemetry"
 
 	"github.com/99designs/gqlgen/graphql/handler"
 	"github.com/99designs/gqlgen/graphql/playground"
@@ -20,63 +26,71 @@ import (
 )
 
 func main() {
-	// Initialize structured logger
 	log := logger.New(true)
 
-	// Load configuration
-	cfg, err := config.LoadConfig()
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	cfg, err := config.Load()
 	if err != nil {
-		log.Error("cannot load config")
+		log.ErrorWithError("load config", err)
 		os.Exit(1)
 	}
 
-	// Connect to database
-	db, err := database.NewPostgresConnection(cfg)
+	pool, err := postgres.NewPool(ctx, cfg.DatabaseDSN)
 	if err != nil {
-		log.Error("cannot connect to database")
+		log.ErrorWithError("connect postgres", err)
+		os.Exit(1)
+	}
+	defer pool.Close()
+
+	jwtProvider, err := auth.NewJWTProvider(cfg.JWTSecret, cfg.JWTExpiryMins, "eventify", "eventify-api")
+	if err != nil {
+		log.ErrorWithError("configure jwt", err)
 		os.Exit(1)
 	}
 
-	// Initialize telemetry
 	telemetry.AddTelemetry("eventify-graphql")
-	telemetryAdapter := telemetry.NewTelemetryAdapter()
 
-	// Initialize services
-	eventService := service.NewEventService(db, log, telemetryAdapter)
+	resolver := resolvers.NewResolver(
+		events.NewCreateEventHandler(pool),
+		events.NewUpdateEventHandler(pool),
+		events.NewGetEventHandler(pool),
+		events.NewGetEventsHandler(pool),
+		events.NewDeleteEventHandler(pool),
+	)
 
-	// Initialize GraphQL resolvers
-	resolver := resolvers.NewResolver(eventService, log, telemetryAdapter)
+	srv := handler.NewDefaultServer(generated.NewExecutableSchema(generated.Config{Resolvers: resolver}))
 
-	// Create GraphQL schema using generated code
-	schema := generated.NewExecutableSchema(generated.Config{
-		Resolvers: resolver,
-	})
-	srv := handler.NewDefaultServer(schema)
-
-	// Setup router
 	router := mux.NewRouter()
 	router.Handle("/", playground.Handler("GraphQL playground", "/query"))
-	router.Handle("/query", srv)
+	// Auth attaches claims when a valid bearer token is present; mutations
+	// require them, queries do not.
+	router.Handle("/query", gqlmiddleware.Auth(jwtProvider)(srv))
 
-	// Setup graceful shutdown
-	c := make(chan os.Signal, 1)
-	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
+	// The old server listened on :3001 while the ReadMe documented :8080.
+	httpServer := &http.Server{
+		Addr:              ":" + cfg.GraphQLPort,
+		Handler:           router,
+		ReadHeaderTimeout: 10 * time.Second,
+	}
 
 	go func() {
-		<-c
-		log.Info("Shutting down GraphQL server gracefully...")
-		if err := telemetry.ShutdownTracer(); err != nil {
-			log.ErrorWithError("Error shutting down tracer", err)
+		<-ctx.Done()
+		log.Info("shutting down graphql server")
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		if err := httpServer.Shutdown(shutdownCtx); err != nil {
+			log.ErrorWithError("shutdown graphql server", err)
 		}
-		os.Exit(0)
+		if err := telemetry.ShutdownTracer(); err != nil {
+			log.ErrorWithError("shutdown tracer", err)
+		}
 	}()
 
-	// Start server
-	port := ":3001"
-	log.Info(fmt.Sprintf("Starting GraphQL server on %s", port))
-	if err := http.ListenAndServe(port, router); err != nil {
-		log.Error("Failed to start GraphQL server")
+	log.Info("graphql server listening on :" + cfg.GraphQLPort)
+	if err := httpServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		log.ErrorWithError("graphql server stopped", err)
 		os.Exit(1)
 	}
 }
-

@@ -1,21 +1,21 @@
 # Where are all the schema files located? globs are supported eg  src/**/*.graphqls
 schema:
-  - api/graphql/schemas/*.graphql
+  - internal/transport/graphql/schemas/*.graphql
 
 # Where should the generated server code go?
 exec:
-  filename: api/graphql/generated/generated.go
+  filename: internal/transport/graphql/generated/generated.go
   package: generated
 
 # Where should any generated models go?
 model:
-  filename: api/graphql/models/models_gen.go
+  filename: internal/transport/graphql/models/models_gen.go
   package: models
 
 # Where should the resolver implementations go?
 resolver:
   layout: follow-schema
-  dir: api/graphql/resolvers
+  dir: internal/transport/graphql/resolvers
   package: resolvers
   filename_template: "{name}.resolvers.go"
 
@@ -43,7 +43,7 @@ resolver:
 # gqlgen will search for any type names in the schema in these go packages
 # if they match it will use them, otherwise it will generate them.
 autobind:
-  - "eventify/internal/domain"
+  - "eventify/api/internal/domain"
 
 # This section declares type mapping between the GraphQL and go type systems
 #

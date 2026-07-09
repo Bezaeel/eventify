@@ -44,11 +44,11 @@ func (h *EventCreatedV1) Handle(ctx context.Context, env events.Envelope) error 
 
 	_, err := h.db.Exec(ctx,
 		`INSERT INTO analytics_events
-		     (message_id, event_id, name, type, country_code, created_by, occurred_at)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7)
+		     (message_id, event_id, name, type, created_by, occurred_at)
+		 VALUES ($1, $2, $3, $4, $5, $6)
 		 ON CONFLICT (message_id) DO NOTHING`,
 		env.MessageID, payload.ID, payload.Name, payload.Type,
-		payload.CountryCode, payload.CreatedBy, payload.OccurredAt,
+		payload.CreatedBy, payload.OccurredAt,
 	)
 	if err != nil {
 		return fmt.Errorf("persist analytics event %s: %w", env.MessageID, err)

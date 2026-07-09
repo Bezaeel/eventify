@@ -1,119 +1,85 @@
+// Command http-server serves the REST API.
 package main
 
 import (
-	"eventify/api/http/controllers/events"
-	"eventify/api/http/controllers/v1"
-	adminControllers "eventify/api/http/controllers/v1/admin"
-	"eventify/internal/service"
-	"eventify/internal/shared/auth"
-	"eventify/internal/shared/config"
-	"eventify/pkg/database"
-	"eventify/pkg/logger"
-	"eventify/pkg/telemetry"
+	"context"
 	"os"
 	"os/signal"
 	"syscall"
+
+	"eventify/api/internal/shared/auth"
+	"eventify/api/internal/shared/config"
+	transporthttp "eventify/api/internal/transport/http"
+	"eventify/platform/logger"
+	"eventify/platform/postgres"
+	"eventify/platform/telemetry"
 
 	scalar "github.com/oSethoum/fiber-scalar"
 )
 
 // @title Eventify API
 // @version 1.0
-// @description This is the API documentation for Eventify.
-// @termsOfService http://swagger.io/terms/
-
-// @contact.name API Support
-// @contact.url http://www.swagger.io/support
-// @contact.email support@swagger.io
-
-// @license.name Apache 2.0
-// @license.url http://www.apache.org/licenses/LICENSE-2.0.html
+// @description Event management over REST, gRPC and GraphQL, sharing one implementation per use case.
 
 // @securityDefinitions.apikey BearerAuth
 // @in header
 // @name Authorization
-// @description Type "Bearer" followed by a space and JWT token.
+// @description Type "Bearer" followed by a space and a JWT.
 
 // @host localhost:3000
 func main() {
-	// Initialize structured logger
 	log := logger.New(true)
 
-	// Load configuration
-	cfg, err := config.LoadConfig()
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	cfg, err := config.Load()
 	if err != nil {
-		log.Error("cannot load config")
+		log.ErrorWithError("load config", err)
 		os.Exit(1)
 	}
 
-	// Connect to database
-	db, err := database.NewPostgresConnection(cfg)
+	pool, err := postgres.NewPool(ctx, cfg.DatabaseDSN)
 	if err != nil {
-		log.Error("cannot connect to database")
+		log.ErrorWithError("connect postgres", err)
+		os.Exit(1)
+	}
+	defer pool.Close()
+
+	// Fails closed when JWT_SECRET is unset or too short.
+	jwtProvider, err := auth.NewJWTProvider(cfg.JWTSecret, cfg.JWTExpiryMins, "eventify", "eventify-api")
+	if err != nil {
+		log.ErrorWithError("configure jwt", err)
 		os.Exit(1)
 	}
 
-	// Initialize JWT provider
-	jwtProvider := auth.NewJWTProvider(
-		os.Getenv("JWT_SECRET"),
-		60, // 60 minutes expiry
-		"eventify",
-		"eventify-api",
-	)
-
-	// add telemetry
 	telemetry.AddTelemetry("eventify-api")
-	telemetryAdapter := telemetry.NewTelemetryAdapter()
+	adapter := telemetry.NewTelemetryAdapter()
 
-	// Initialize permission service
+	app := transporthttp.NewApp(pool, jwtProvider, adapter)
 
-	apiHttpServer := NewAPIServer(telemetryAdapter)
-	app := apiHttpServer.App()
-
-	// Initialize repositories
-	eventService := service.NewEventService(db, log, telemetryAdapter)
-	userService := service.NewUserService(db)
-	roleService := service.NewRoleService(db)
-	permissionService := service.NewPermissionService(db)
-
-	// Initialize controllers
-	authController := controllers.NewAuthController(app, userService, jwtProvider, permissionService, log)
-	authController.RegisterRoutes()
-
-	events.NewEventController(app, telemetryAdapter, eventService, jwtProvider, log)
-
-	// Initialize password controller
-	passwordController := controllers.NewPasswordController(app, userService, jwtProvider)
-	passwordController.RegisterRoutes()
-
-	// Initialize admin controller
-	adminController := adminControllers.NewAdminController(app, userService, roleService, permissionService, jwtProvider)
-	adminController.RegisterRoutes()
-
-	// Add Swagger handler
 	app.Get("/docs", scalar.Handler(&scalar.Options{
-		SpecURL:  "../../docs/swagger.json",
-		SpecFile: "../../docs/swagger.json",
+		SpecURL:  "docs/swagger.json",
+		SpecFile: "docs/swagger.json",
 		Layout:   scalar.LayoutClassic,
 		Theme:    scalar.ThemeSolarized,
 		DarkMode: true,
-		// other options can go here
 	}))
 
-	// Setup graceful shutdown
-	c := make(chan os.Signal, 1)
-	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
-
 	go func() {
-		<-c
-		log.Info("Shutting down gracefully...")
-		if err := telemetry.ShutdownTracer(); err != nil {
-			log.ErrorWithError("Error shutting down tracer", err)
+		<-ctx.Done()
+		log.Info("shutting down http server")
+		if err := app.Shutdown(); err != nil {
+			log.ErrorWithError("shutdown http server", err)
 		}
-		os.Exit(0)
+		if err := telemetry.ShutdownTracer(); err != nil {
+			log.ErrorWithError("shutdown tracer", err)
+		}
 	}()
 
-	// Start the server
-	log.Info("Starting server on :3000")
-	app.Listen(":3000")
+	log.Info("http server listening on :" + cfg.HTTPPort)
+	if err := app.Listen(":" + cfg.HTTPPort); err != nil {
+		log.ErrorWithError("http server stopped", err)
+		os.Exit(1)
+	}
 }

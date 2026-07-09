@@ -1,58 +1,75 @@
+// Package auth issues and validates JWT access tokens.
 package auth
 
 import (
 	"errors"
-	"eventify/internal/domain"
-	"os"
+	"fmt"
 	"time"
+
+	"eventify/api/internal/domain"
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
 )
 
-// CustomClaims extends jwt.RegisteredClaims with user-specific claims
+// CustomClaims extends jwt.RegisteredClaims with user-specific claims.
 type CustomClaims struct {
-	UserID      uuid.UUID `json:"user_id"`
 	Email       string    `json:"email"`
 	Permissions []string  `json:"permissions"`
+	UserID      uuid.UUID `json:"user_id"`
 	jwt.RegisteredClaims
 }
 
-// JWTProvider handles JWT token generation and validation
+// JWTProvider issues and validates access tokens.
 type JWTProvider struct {
-	secretKey []byte
-	expiryMin int
 	issuer    string
 	audience  string
+	secretKey []byte
+	expiry    time.Duration
 }
 
+// IJWTProvider is the seam the HTTP middleware depends on.
 type IJWTProvider interface {
 	GenerateToken(user *domain.User, permissions []string) (string, error)
 	ValidateToken(tokenString string) (*CustomClaims, error)
+	Expiry() time.Duration
 }
 
-// NewJWTProvider creates a new JWTProvider
-func NewJWTProvider(secretKey string, expiryMin int, issuer, audience string) *JWTProvider {
+// NewJWTProvider builds a provider, refusing to start without a secret.
+//
+// The previous implementation fell back to os.Getenv("JWT_SECRET") and then, if
+// that was also empty, to the literal "default-secret-key-change-in-production".
+// Since cmd/http-server passed os.Getenv("JWT_SECRET") straight in, an unset
+// variable silently produced a server signing tokens with a constant published
+// in the source tree — anyone could mint an admin token. Failing closed is the
+// only safe behaviour: a service that cannot sign securely must not serve.
+func NewJWTProvider(secretKey string, expiryMins int, issuer, audience string) (*JWTProvider, error) {
 	if secretKey == "" {
-		secretKey = os.Getenv("JWT_SECRET")
-		if secretKey == "" {
-			secretKey = "default-secret-key-change-in-production"
-		}
+		return nil, errors.New("jwt secret must not be empty")
 	}
-
-	if expiryMin == 0 {
-		expiryMin = 60 // Default to 60 minutes
+	if len(secretKey) < 32 {
+		return nil, fmt.Errorf("jwt secret must be at least 32 bytes, got %d", len(secretKey))
+	}
+	if expiryMins <= 0 {
+		expiryMins = 60
 	}
 
 	return &JWTProvider{
 		secretKey: []byte(secretKey),
-		expiryMin: expiryMin,
+		expiry:    time.Duration(expiryMins) * time.Minute,
 		issuer:    issuer,
 		audience:  audience,
-	}
+	}, nil
 }
 
-// GenerateToken creates a new JWT token for a user with permissions
+// Expiry is how long an issued token remains valid.
+//
+// Transports read this rather than hardcoding a duration: the old AuthResponse
+// reported `ExpiresAt: time.Now().Add(time.Hour)` no matter what expiry the
+// provider was configured with.
+func (j *JWTProvider) Expiry() time.Duration { return j.expiry }
+
+// GenerateToken issues an access token for a user.
 func (j *JWTProvider) GenerateToken(user *domain.User, permissions []string) (string, error) {
 	now := time.Now()
 	claims := CustomClaims{
@@ -60,7 +77,7 @@ func (j *JWTProvider) GenerateToken(user *domain.User, permissions []string) (st
 		Email:       user.Email,
 		Permissions: permissions,
 		RegisteredClaims: jwt.RegisteredClaims{
-			ExpiresAt: jwt.NewNumericDate(now.Add(time.Duration(j.expiryMin) * time.Minute)),
+			ExpiresAt: jwt.NewNumericDate(now.Add(j.expiry)),
 			IssuedAt:  jwt.NewNumericDate(now),
 			NotBefore: jwt.NewNumericDate(now),
 			Issuer:    j.issuer,
@@ -69,23 +86,31 @@ func (j *JWTProvider) GenerateToken(user *domain.User, permissions []string) (st
 		},
 	}
 
-	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	return token.SignedString(j.secretKey)
+	return jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString(j.secretKey)
 }
 
-// ValidateToken validates an incoming token and returns the claims
+// ValidateToken parses and verifies a token.
+//
+// The signing method is pinned with WithValidMethods. Without it, ParseWithClaims
+// hands the key callback whatever algorithm the token header claims, which is the
+// classic JWT algorithm-confusion attack surface. Issuer and audience are checked
+// too; previously they were set at signing time and never verified.
 func (j *JWTProvider) ValidateToken(tokenString string) (*CustomClaims, error) {
-	token, err := jwt.ParseWithClaims(tokenString, &CustomClaims{}, func(token *jwt.Token) (interface{}, error) {
-		return j.secretKey, nil
-	})
-
+	token, err := jwt.ParseWithClaims(
+		tokenString,
+		&CustomClaims{},
+		func(*jwt.Token) (any, error) { return j.secretKey, nil },
+		jwt.WithValidMethods([]string{jwt.SigningMethodHS256.Alg()}),
+		jwt.WithIssuer(j.issuer),
+		jwt.WithAudience(j.audience),
+	)
 	if err != nil {
 		return nil, err
 	}
 
-	if claims, ok := token.Claims.(*CustomClaims); ok && token.Valid {
-		return claims, nil
+	claims, ok := token.Claims.(*CustomClaims)
+	if !ok || !token.Valid {
+		return nil, errors.New("invalid token")
 	}
-
-	return nil, errors.New("invalid token")
+	return claims, nil
 }

@@ -6,6 +6,13 @@
 *.dylib
 bin/
 dist/
+# `go build` inside a cmd/ dir names the binary after the directory, producing
+# an extensionless file no wildcard above would catch. A 32MB Mach-O binary was
+# committed at api/cmd/http-server/cmd this way.
+cmd/*/main
+cmd/*/cmd
+*/cmd/*/main
+*/cmd/*/cmd
 
 # Test + coverage output
 *.test

@@ -63,14 +63,21 @@ test-unit:
 test-integration:
 	@for m in $(MODULES); do echo "integration: $$m"; (cd $$m && go test -count=1 -run Integration ./...) || exit 1; done
 
+# `go test ./...` from the workspace root fails: the root is not a module, so
+# `./...` matches no packages. Each module is walked in turn instead.
 test-coverage:
-	go test -count=1 ./... -coverprofile=coverage.out
+	@echo "mode: atomic" > coverage.out
+	@for m in $(MODULES); do \
+		(cd $$m && go test -count=1 ./... -covermode=atomic -coverprofile=../$$m.cover.out) || exit 1; \
+		tail -n +2 $$m.cover.out >> coverage.out 2>/dev/null || true; rm -f $$m.cover.out; \
+	done
 	go tool cover -html=coverage.out -o coverage.html
 
 ## ---- codegen ---------------------------------------------------------------
+# Run from inside the module that owns the interface; there is no root module.
 mock:
-	go run github.com/golang/mock/mockgen -source=platform/telemetry/telemetryAdapter.go \
-		-destination=platform/telemetry/mocks/telemetry_adapter_mock.go -package=mocks
+	cd platform && go run github.com/golang/mock/mockgen -source=telemetry/telemetryAdapter.go \
+		-destination=telemetry/mocks/telemetry_adapter_mock.go -package=mocks
 
 swagger:
 	cd api && swag init -g cmd/http-server/main.go -o docs && go run docs/scripts/add_xtags.go

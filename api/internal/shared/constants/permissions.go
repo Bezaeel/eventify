@@ -1,3 +1,4 @@
+// Package constants holds the permission names used across every transport.
 package constants
 
 // PermissionConstants defines all available permissions in the system
