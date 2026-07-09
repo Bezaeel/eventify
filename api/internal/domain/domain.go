@@ -18,9 +18,9 @@ import (
 
 // Event is a scheduled event. Tags is persisted as JSONB.
 type Event struct {
-	Date        time.Time
-	CreatedAt   time.Time
-	UpdatedAt   *time.Time
+	Date      time.Time
+	CreatedAt time.Time
+	UpdatedAt *time.Time
 	// Creator backs the GraphQL `creator: User` field. It is nil unless a query
 	// explicitly joins and populates it, which none currently do — under GORM it
 	// was equally always nil, because no service ever called Preload. The

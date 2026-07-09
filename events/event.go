@@ -20,11 +20,11 @@ package events
 // Envelope is the transport-neutral shape the relay publishes and subscribers
 // decode. Payload holds the versioned event struct, marshalled to JSON.
 type Envelope struct {
-	Name      string `json:"name"`
-	Version   string `json:"version"`
-	MessageID string `json:"message_id"`
+	Name       string `json:"name"`
+	Version    string `json:"version"`
+	MessageID  string `json:"message_id"`
 	OccurredAt string `json:"occurred_at"`
-	Payload   []byte `json:"payload"`
+	Payload    []byte `json:"payload"`
 }
 
 // RoutingKey is the AMQP routing key for a given event name and version, e.g.
