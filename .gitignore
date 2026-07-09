@@ -1,57 +1,60 @@
-# Binaries for programs and plugins
+# Binaries
 *.exe
 *.exe~
 *.dll
 *.so
 *.dylib
+bin/
+dist/
+# `go build` inside a cmd/ dir names the binary after the directory, producing
+# an extensionless file no wildcard above would catch. A 32MB Mach-O binary was
+# committed at api/cmd/http-server/cmd this way.
+cmd/*/main
+cmd/*/cmd
+*/cmd/*/main
+*/cmd/*/cmd
 
-# Test binary, built with `go test -c`
+# Test + coverage output
 *.test
-
-# Output of the go coverage tool, specifically when used with LiteIDE
 *.out
+coverage.html
 
-# Dependency directories (remove the comment below to include it)
+# Dependency directories
 vendor/
 
-# Go workspace file
-go.work
-
-# IDE specific files
+# Editors / OS
 .idea/
 .vscode/
 *.swp
 *.swo
 .DS_Store
 
-# Environment files
+# Environment files — never commit secrets. .env.example IS committed.
 .env
 .env.local
 .env.*.local
 
-# Swagger generated files
-docs/
+# Generated API docs. Note the trailing components: the previous blanket
+# `docs/` rule also ignored docs/scripts/add_xtags.go and docs/telemetry.md,
+# which are hand-written sources, not generated output. Combined with
+# `make clean` running `rm -rf docs`, those files existed only on one laptop
+# and were one `make clean` away from being lost permanently.
+api/docs/docs.go
+api/docs/swagger.json
+api/docs/swagger.yaml
 
-# Log files
+# Logs
 *.log
 
-# Binary output directory
-bin/
-dist/
-
-# Debug files
-debug/
-
-# Database files
-*.db
-*.sqlite
-
-# Temporary files
+# Air live reload
 tmp/
 temp/
 
-# Air live reload
-tmp/ 
+# Local database files
+*.db
+*.sqlite
 
-# docker
-docker-compose.yml
+# go.work IS committed: it defines the module graph and every cross-module
+# `replace` depends on it being consistent across machines. Only the local
+# resolution cache is ignored.
+go.work.sum
