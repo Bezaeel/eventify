@@ -89,8 +89,10 @@ func (h CancelEventHandler) Handle(ctx context.Context, cmd CancelEventCommand) 
 
 	// ... SQL against tx ...
 
-	evt := eventcancelledv1.EventCancelled{ID: res.EventID.String(), ...}
-	if err := outbox.Enqueue(ctx, tx, eventcancelledv1.Name, eventcancelledv1.Version, evt); err != nil {
+	// One message ID: stamped into the payload, and passed to Enqueue for the row.
+	messageID := uuid.New()
+	evt := events.EventCancelled{MessageID: messageID, ID: res.EventID, ...}
+	if err := outbox.Enqueue(ctx, tx, events.EventCancelledName, messageID, evt); err != nil {
 		return res, err
 	}
 	return res, tx.Commit(ctx)
@@ -147,7 +149,8 @@ See the `test-slice` skill.
 
 - [ ] Handler has no transport types and returns `apperrors`
 - [ ] Handler takes `postgres.Querier`
-- [ ] Emitting a domain event? `outbox.Enqueue` inside the same `pgx.Tx`
+- [ ] Emitting a domain event? `outbox.Enqueue` inside the same `pgx.Tx`, and a processor registered in the relay
+- [ ] Changed a contract, a migration, or a module graph? Run `sync-context` before reporting done
 - [ ] Adapter contains zero SQL
 - [ ] `go vet ./... && staticcheck ./...` clean
 - [ ] `fieldalignment -fix ./...` run on new structs
