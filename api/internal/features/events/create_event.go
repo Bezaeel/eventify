@@ -4,7 +4,9 @@ import (
 	"context"
 	"time"
 
-	eventcreatedv1 "eventify/events/eventcreated/v1"
+	// Aliased: this feature package is also called events. contracts is the
+	// wire contract shared with the relay and the subscribers.
+	contracts "eventify/events"
 	"eventify/outbox"
 	"eventify/platform/apperrors"
 	"eventify/platform/postgres"
@@ -82,14 +84,20 @@ func (h CreateEventHandler) Handle(ctx context.Context, cmd CreateEventCommand) 
 		return res, apperrors.Wrap(apperrors.Internal, "insert event", err)
 	}
 
-	evt := eventcreatedv1.EventCreated{
-		ID:         res.EventID.String(),
+	// The message ID is minted here, stamped into the payload, and handed to
+	// Enqueue for the row. One value, one identity: the consumer deduplicates on
+	// what it reads out of the payload, and the outbox row it came from can be
+	// found by the same key.
+	messageID := uuid.New()
+	evt := contracts.EventCreated{
+		MessageID:  messageID,
+		ID:         res.EventID,
 		Name:       cmd.Name,
 		Type:       cmd.Category,
-		CreatedBy:  cmd.CreatedBy.String(),
+		DoneBy:     cmd.CreatedBy.String(),
 		OccurredAt: res.CreatedAt.UTC(),
 	}
-	if err := outbox.Enqueue(ctx, tx, eventcreatedv1.Name, eventcreatedv1.Version, evt); err != nil {
+	if err := outbox.Enqueue(ctx, tx, contracts.EventCreatedName, messageID, evt); err != nil {
 		return res, apperrors.Wrap(apperrors.Internal, "enqueue EventCreated", err)
 	}
 

@@ -3,33 +3,24 @@
 //
 // # Versioning
 //
-// A published event is a contract with other processes. A subscriber running
-// last week's binary will still receive events produced by today's. Therefore:
+// Events are not versioned in their type. The pipeline is versioned instead:
+// producer and consumer deploy together, and a shape change ships on both sides
+// at once.
 //
-//	Never modify a published event struct in place.
+// That trade is deliberate, and it has one edge the pipeline cannot cover.
+// During a rollout, messages published by the old producer are still sitting in
+// RabbitMQ when the new consumer starts reading. Whatever is in flight will be
+// decoded by the new struct. So:
 //
-// To evolve one, add a new version package alongside the old (v1 -> v2),
-// dual-publish both until every consumer has migrated, then delete v1. Adding
-// a field to v1 silently breaks every consumer that validates payloads; the
-// compiler will not warn you, because the break happens over the wire.
+//	Field changes must be additive. Never rename a field, never change its type,
+//	never remove one that a message in flight might carry.
 //
-// Each version package declares its own Name and Version constants. The outbox
-// relay joins them into a routing key; subscribers register per (name, version).
+// Adding a field is safe: an old message simply leaves it zero. Renaming one
+// silently zeroes it on every message already queued, and nothing fails loudly.
 package events
 
-// Envelope is the transport-neutral shape the relay publishes and subscribers
-// decode. Payload holds the versioned event struct, marshalled to JSON.
-type Envelope struct {
-	Name       string `json:"name"`
-	Version    string `json:"version"`
-	MessageID  string `json:"message_id"`
-	OccurredAt string `json:"occurred_at"`
-	Payload    []byte `json:"payload"`
-}
-
-// RoutingKey is the AMQP routing key for a given event name and version, e.g.
-// "eventify.events.EventCreated.v1". Both the relay and subscribers derive the
-// key through this function so the two can never drift apart.
-func RoutingKey(name, version string) string {
-	return "eventify.events." + name + "." + version
-}
+// RoutingKey is the AMQP routing key for a given event name, e.g.
+// "eventify.events.EventCreated". The relay publishes under it and subscribers
+// bind their queue to it, both through this function, so the two cannot drift
+// apart.
+func RoutingKey(name string) string { return "eventify.events." + name }

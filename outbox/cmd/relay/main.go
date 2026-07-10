@@ -9,10 +9,11 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
-	"time"
 
-	"eventify/outbox/publisher"
+	"eventify/events"
+	"eventify/outbox/processors"
 	"eventify/outbox/relay"
+	platformamqp "eventify/platform/amqp"
 	"eventify/platform/config"
 	"eventify/platform/logger"
 	"eventify/platform/postgres"
@@ -46,16 +47,28 @@ func main() {
 	}
 	defer pool.Close()
 
-	pub, err := publisher.NewAMQP(config.String("AMQP_URI", "amqp://guest:guest@localhost:5672/"))
+	pub, err := platformamqp.NewPublisher(config.String("AMQP_URI", "amqp://guest:guest@localhost:5672/"))
 	if err != nil {
 		log.ErrorWithError("connect amqp", err)
 		os.Exit(1)
 	}
 	defer func() { _ = pub.Close() }()
 
-	r := relay.New(pool, pub, log,
-		config.Duration("OUTBOX_POLL_INTERVAL", time.Second),
-		config.Int("OUTBOX_BATCH_SIZE", 100),
+	// Every event this relay knows how to publish. An event with no processor
+	// here is poisoned on its first poll rather than published, so adding an
+	// event means adding a line to this slice.
+	//
+	// Most events publish unchanged and use NewGeneric. One that must do work
+	// before it is safe to publish gets its own type embedding processors.Base.
+	procs := []processors.IOutboxProcessor{
+		processors.NewGeneric(pub, events.EventCreatedName),
+	}
+
+	// One relay instance, scaled vertically: raise OUTBOX_BATCH_SIZE before
+	// running a second replica.
+	r := relay.New(pool, procs, log,
+		config.Duration("OUTBOX_POLL_INTERVAL", relay.DefaultPollInterval),
+		config.Int("OUTBOX_BATCH_SIZE", relay.DefaultBatchSize),
 	)
 
 	log.Info("outbox relay started")
