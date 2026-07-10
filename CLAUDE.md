@@ -15,7 +15,7 @@ A Go workspace (`go.work`) of five modules. Bare module paths (`eventify/api`, n
 ```
 go.work
 platform/     eventify/platform     logger, telemetry, postgres pool, config, apperrors
-events/       eventify/events       versioned wire contracts + Envelope + RoutingKey
+events/       eventify/events       wire contracts + name constants + RoutingKey
 outbox/       eventify/outbox       outbox table, Enqueue, relay binary
 api/          eventify/api          three transports over shared feature slices
 subscribers/  eventify/subscribers  one binary, one router, many event handlers
@@ -105,16 +105,48 @@ A write that publishes to RabbitMQ has two commit points and no way to make them
 tx, _ := pool.Begin(ctx)
 defer tx.Rollback(ctx)
 
-h := events.UpdateEventHandler{db: tx}
-res, err := h.Handle(ctx, cmd)          // business write
-outbox.Enqueue(ctx, tx, name, ver, evt) // intent to publish — same tx
+messageID := uuid.New()
+evt := events.EventCreated{MessageID: messageID, ID: res.EventID, /* ... */}
 
-tx.Commit(ctx)                           // both, or neither
+h := events.UpdateEventHandler{db: tx}
+res, err := h.Handle(ctx, cmd)                                    // business write
+outbox.Enqueue(ctx, tx, events.EventCreatedName, messageID, evt)  // intent to publish — same tx
+
+tx.Commit(ctx)                                                    // both, or neither
 ```
 
-The relay publishes and marks rows published. It may publish then crash before marking, so delivery is **at-least-once**. **Every subscriber must be idempotent on `Envelope.MessageID`.**
+The caller mints `messageID`, stamps it into the payload, and hands the same value to `Enqueue`. One identity: the consumer deduplicates on what it reads out of the payload, and an operator finds the row by the same key.
 
-Published event structs are contracts with other processes. **Never edit one in place.** Add `events/eventcreated/v2/`, dual-publish, migrate consumers, delete v1.
+The relay claims queued rows, hands each to the **processor** that declares its payload type, and records the outcome. It may publish then crash before recording, so delivery is **at-least-once**. **Every subscriber must be idempotent on the payload's `MessageID`.**
+
+There is no envelope. The payload publishes bare, under routing key `events.RoutingKey(payloadType)`; the routing key a message arrived on is what identifies its contract.
+
+#### Processors
+
+`outbox/processors` holds two kinds, both satisfying `IOutboxProcessor`, so the relay's loop cannot tell them apart:
+
+- **`Generic`** publishes the stored bytes unchanged. Most events want this. No type parameter — it never looks inside the payload.
+- **`Base[T]`** decodes the payload into `T` and hands it to a process function, for an event that must enrich it, call a service, or write a second row before it is safe to publish.
+
+Dispatch is on the **declared** `PayloadType` (`events.EventCreatedName`), never on `reflect.TypeOf(payload).String()`. A Go type name is not a stable identifier: the row is written by one binary and read by another, possibly after a refactor renamed the struct. Rows already queued would stop matching and the backlog would be poisoned.
+
+#### Message lifecycle
+
+`QUEUED → COMPLETED`, or `→ POISONED` (no processor claims the payload type), or `→ EXCEEDED` (failed `MaxAttempts` times).
+
+Attempts are spent one per poll with no backoff, so a broker outage lasting `MaxAttempts` poll intervals exceeds the backlog. **This is deliberate.** The outbox stopping is a thing to alert on, not to retry forever. Both terminal states are cleared by hand once the cause is fixed:
+
+```sql
+UPDATE outbox_messages SET status = 1, attempts = 0 WHERE status IN (2, 4);  -- POISONED, EXCEEDED
+```
+
+`outbox/tests/integration/recovery_test.go` runs that query verbatim. If you change the status constants, it fails — which is the point.
+
+#### Versioning
+
+**Events are not versioned in their type. The pipeline is versioned.** Producer and consumer deploy together.
+
+That trade has one edge the pipeline cannot cover: during a rollout, messages published by the old producer are still in RabbitMQ when the new consumer starts reading. So **field changes must be additive**. Adding a field is safe — an old message leaves it zero. Renaming one, changing its type, or removing one silently zeroes it on every message already queued, and nothing fails loudly.
 
 ## Commands
 
@@ -137,7 +169,7 @@ Each module also builds alone: `cd outbox && go build ./...`.
 | Feature handler (`internal/features/`) | **Integration**, testcontainers | It contains raw SQL. Mocks cannot validate a query. |
 | Transport adapter | **Unit** | Inject a handler func; assert decode/encode/status mapping. |
 | Subscriber handler | **Integration** | Raw SQL. Assert idempotency by dispatching the same MessageID twice. |
-| Relay | **Integration** | It drives `FOR UPDATE SKIP LOCKED` and real transactions. Inject a fake `relay.Publisher`, but keep the real database. |
+| Relay + processors | **Integration** | It drives `FOR UPDATE SKIP LOCKED` and real transactions. Inject a fake `processors.Publisher`, but keep the real database. |
 | `platform/apperrors`, registries | **Unit** | Pure. |
 
 Transport `Handlers` structs hold **function values**, not concrete handler types, precisely so a unit test can inject a stub:
@@ -158,6 +190,8 @@ There are **no service mocks**, because there are no service interfaces. `mockge
 
 Static analysis is not optional — `go vet ./...` and `staticcheck ./...` before every commit. `staticcheck.conf` enables all checks except `ST1003`.
 
+**Build every module standalone, not just the workspace.** `go.work` resolves a missing `require` from a sibling module, so `go build eventify/...` stays green while a module is unbuildable in Docker and CI. Only `cd <module> && GOWORK=off go build ./...` catches it.
+
 - `strconv.Itoa` / `FormatInt` / `FormatBool` over `fmt.Sprintf` on hot paths — `Sprintf` reflects.
 - `strings.Builder` over `+` in loops. `sync.Pool` for request-scoped buffers.
 - Run `fieldalignment -fix ./...` on new or modified structs; order fields largest → smallest.
@@ -167,9 +201,52 @@ Static analysis is not optional — `go vet ./...` and `staticcheck ./...` befor
 
 - Do not put SQL in a transport adapter. Do not put `fiber.Ctx`, `proto.*`, or an HTTP status in a feature handler.
 - Do not add a service or repository layer back. If a use case needs two queries, write an unexported helper in its own file.
-- Do not edit a published event struct. Add a version.
+- Do not rename, retype, or remove a field on a published event struct. Additive changes only — messages from the old producer are still in flight during a rollout.
+- Do not dispatch on `reflect.TypeOf(payload).String()`. The payload type is a declared constant; a reflected name is a wire contract no compiler checks.
 - Do not pass a `*pgxpool.Pool` to `outbox.Enqueue`. It takes the caller's `pgx.Tx`, or the pattern is pointless.
+- Do not mint a second message ID inside `Enqueue`. The caller stamps one into the payload and passes the same value.
 - Do not ack a message whose handler returned an error. Nack it; let the DLQ catch it.
 - Do not use `fmt.Println` for logging; use `platform/logger`.
 - Do not embed secrets in source; read them from the environment.
 - Do not commit to `main` directly.
+- Do not leave this file describing code that no longer exists. See **Keeping this file true**.
+
+## Keeping this file true
+
+This file, `.claude/agents/*.md`, and `.claude/skills/*/SKILL.md` are read *before* the code is. When they describe a design that no longer exists, they do not merely fail to help — they actively mislead, and an agent will implement the design it read rather than the one that is there.
+
+This has already happened once. `events/` lost its versioned subpackages, its envelope type, and its two-argument routing-key helper; for the length of a refactor, every skill still instructed agents to create versioned event packages that the module no longer supported.
+
+**So this loop is mandatory, not advisory.**
+
+### The trigger
+
+A change under any of these paths is a **context-affecting change**:
+
+| Path | What it can invalidate |
+|---|---|
+| `events/**` | contract shape, versioning policy, routing keys |
+| `outbox/**` | enqueue signature, processors, message lifecycle, recovery SQL |
+| `subscribers/internal/handler/**` | handler interface, registry, idempotency key |
+| `platform/amqp/**`, `platform/postgres/**` | topology, publisher, `Querier` |
+| `go.work`, any `go.mod` | module graph, dependency direction |
+| `**/migrations/*.sql` | any schema this file documents |
+
+### The loop
+
+After a context-affecting change, **before reporting the work complete**:
+
+1. **Detect.** For each doc file, grep it for identifiers you changed — removed types, renamed functions, altered signatures, dropped columns. A doc naming a symbol that no longer compiles is stale, full stop.
+2. **Reconcile.** Update the doc to describe what is now true. Do not paper over it: if a design was replaced, say what replaced it. Delete the guidance that no longer applies rather than leaving it beside its successor — two descriptions of one thing is worse than one wrong description, because now nobody knows which is current.
+3. **Verify.** Every code block in a doc must compile against the current tree, and every SQL snippet must run against the current schema. If you cannot verify it, do not write it. Snippets that guard a real procedure belong in a test — `outbox/tests/integration/recovery_test.go` is the pattern.
+4. **Report.** Say which docs you updated and why. A silent doc edit is as bad as a silent behaviour change.
+
+The `/sync-context` skill performs steps 1–3 across all of `.claude/` and this file.
+
+**A task that changed a contract and left the docs describing the old one is not complete.** Verify with:
+
+```bash
+rg -n -f .claude/retired-symbols.txt CLAUDE.md .claude/agents .claude/skills
+```
+
+Empty output is the pass condition. `.claude/retired-symbols.txt` holds one pattern per retired identifier; the patterns live in a data file rather than inline so the check cannot match its own text. **When you retire a symbol, add it to that file.** That is what makes this a regression test for the docs rather than a one-off cleanup.

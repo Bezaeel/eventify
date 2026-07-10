@@ -7,7 +7,7 @@ import (
 
 	"eventify/api/internal/features/events"
 	"eventify/api/tests/integration/testsupport"
-	eventcreatedv1 "eventify/events/eventcreated/v1"
+	contracts "eventify/events"
 	"eventify/platform/apperrors"
 
 	"github.com/google/uuid"
@@ -61,17 +61,24 @@ func TestIntegrationCreateEvent(t *testing.T) {
 		// The whole point of the outbox: the row exists because the insert
 		// committed, not because a publish succeeded.
 		var (
-			evName, evVersion string
-			publishedAt       *time.Time
+			payloadType      string
+			status           int16
+			rowMessageID     uuid.UUID
+			payloadMessageID string
 		)
 		require.NoError(t, pool.QueryRow(ctx,
-			`SELECT name, version, published_at FROM outbox_messages
+			`SELECT payload_type, status, message_id, payload->>'message_id'
+			   FROM outbox_messages
 			  WHERE payload->>'id' = $1`, res.EventID.String()).
-			Scan(&evName, &evVersion, &publishedAt))
+			Scan(&payloadType, &status, &rowMessageID, &payloadMessageID))
 
-		require.Equal(t, eventcreatedv1.Name, evName)
-		require.Equal(t, eventcreatedv1.Version, evVersion)
-		require.Nil(t, publishedAt, "relay has not run; the row must be unpublished")
+		require.Equal(t, contracts.EventCreatedName, payloadType)
+		require.Equal(t, int16(1), status, "relay has not run; the row must still be QUEUED")
+
+		// The consumer deduplicates on the id inside the payload; the operator
+		// finds the row by the id on it. They must be the same value, or a
+		// duplicate delivery cannot be traced back to the row that caused it.
+		require.Equal(t, rowMessageID.String(), payloadMessageID)
 	})
 
 	t.Run("rejects capacity below one", func(t *testing.T) {

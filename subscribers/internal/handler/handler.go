@@ -1,5 +1,5 @@
 // Package handler defines the contract every event consumer implements, and a
-// registry that maps (event name, version) to the consumer for it.
+// registry that maps an event name to the consumer for it.
 package handler
 
 import (
@@ -9,18 +9,17 @@ import (
 	"eventify/events"
 )
 
-// Handler consumes one version of one event.
+// Handler consumes one event.
 //
-// One Handler per (Name, Version) pair. When an event gains a v2, you register
-// a second Handler rather than teaching the v1 handler to branch on version —
-// that branch is how a consumer ends up silently mishandling old payloads.
+// Handle receives the raw payload bytes rather than a decoded struct: the
+// registry cannot know the concrete type, and decoding belongs to the handler
+// anyway, since it is the only code that knows which contract the name implies.
 type Handler interface {
 	Name() string
-	Version() string
-	Handle(ctx context.Context, env events.Envelope) error
+	Handle(ctx context.Context, payload []byte) error
 }
 
-// Registry resolves an envelope to its Handler.
+// Registry resolves an event name to its Handler.
 type Registry struct {
 	handlers map[string]Handler
 }
@@ -29,35 +28,41 @@ type Registry struct {
 func NewRegistry(hs ...Handler) (*Registry, error) {
 	r := &Registry{handlers: make(map[string]Handler, len(hs))}
 	for _, h := range hs {
-		key := events.RoutingKey(h.Name(), h.Version())
-		if _, dup := r.handlers[key]; dup {
-			return nil, fmt.Errorf("duplicate handler registered for %s", key)
+		if _, dup := r.handlers[h.Name()]; dup {
+			return nil, fmt.Errorf("duplicate handler registered for %s", h.Name())
 		}
-		r.handlers[key] = h
+		r.handlers[h.Name()] = h
 	}
 	return r, nil
+}
+
+// Names lists every event this subscriber consumes.
+func (r *Registry) Names() []string {
+	names := make([]string, 0, len(r.handlers))
+	for name := range r.handlers {
+		names = append(names, name)
+	}
+	return names
 }
 
 // RoutingKeys lists every key the subscriber must bind its queue to.
 func (r *Registry) RoutingKeys() []string {
 	keys := make([]string, 0, len(r.handlers))
-	for k := range r.handlers {
-		keys = append(keys, k)
+	for name := range r.handlers {
+		keys = append(keys, events.RoutingKey(name))
 	}
 	return keys
 }
 
-// Dispatch routes env to its Handler.
+// Dispatch routes a payload to the handler registered for name.
 //
-// An unknown (name, version) is an error, not a silent drop: it means a
-// producer shipped an event this binary was never taught to consume, and the
-// message should be nacked so it lands in the dead-letter queue rather than
-// disappearing.
-func (r *Registry) Dispatch(ctx context.Context, env events.Envelope) error {
-	key := events.RoutingKey(env.Name, env.Version)
-	h, ok := r.handlers[key]
+// An unknown name is an error, not a silent drop: it means a producer shipped
+// an event this binary was never taught to consume, and the message should be
+// nacked so it lands in the dead-letter queue rather than disappearing.
+func (r *Registry) Dispatch(ctx context.Context, name string, payload []byte) error {
+	h, ok := r.handlers[name]
 	if !ok {
-		return fmt.Errorf("no handler registered for %s", key)
+		return fmt.Errorf("no handler registered for %s", name)
 	}
-	return h.Handle(ctx, env)
+	return h.Handle(ctx, payload)
 }

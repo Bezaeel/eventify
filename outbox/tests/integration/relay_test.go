@@ -6,12 +6,14 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"sync"
 	"testing"
 	"time"
 
 	"eventify/events"
 	"eventify/outbox"
+	"eventify/outbox/processors"
 	"eventify/outbox/relay"
 	"eventify/platform/logger"
 
@@ -23,23 +25,30 @@ import (
 	"github.com/testcontainers/testcontainers-go/wait"
 )
 
-// fakePublisher records what the relay hands it, and can be told to fail.
-//
-// The relay declares its own Publisher interface rather than importing
-// watermill, precisely so this can exist.
-type fakePublisher struct {
-	mu   sync.Mutex
-	sent []events.Envelope
-	err  error
+// published is one call to fakePublisher.Publish.
+type published struct {
+	routingKey string
+	messageID  string
+	body       []byte
 }
 
-func (f *fakePublisher) Publish(_ context.Context, _ string, env events.Envelope) error {
+// fakePublisher records what a processor hands it, and can be told to fail.
+//
+// processors declares its own Publisher interface rather than importing
+// watermill, precisely so this can exist.
+type fakePublisher struct {
+	sent []published
+	err  error
+	mu   sync.Mutex
+}
+
+func (f *fakePublisher) Publish(_ context.Context, routingKey, messageID string, body []byte) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if f.err != nil {
 		return f.err
 	}
-	f.sent = append(f.sent, env)
+	f.sent = append(f.sent, published{routingKey, messageID, body})
 	return nil
 }
 
@@ -47,6 +56,20 @@ func (f *fakePublisher) count() int {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return len(f.sent)
+}
+
+func (f *fakePublisher) recover() {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.err = nil
+}
+
+// eventCreatedProcessors is the production processor set: one generic
+// passthrough for EventCreated.
+func eventCreatedProcessors(pub processors.Publisher) []processors.IOutboxProcessor {
+	return []processors.IOutboxProcessor{
+		processors.NewGeneric(pub, events.EventCreatedName),
+	}
 }
 
 func skipUnlessDocker(t *testing.T) {
@@ -79,37 +102,62 @@ func pool(t *testing.T) *pgxpool.Pool {
 	require.NoError(t, err)
 	t.Cleanup(p.Close)
 
+	migrate(t, p)
+	return p
+}
+
+// migrate applies every up migration in order, so the test schema is the schema
+// the relay will actually meet in production rather than a hand-maintained copy.
+func migrate(t *testing.T, p *pgxpool.Pool) {
+	t.Helper()
+	ctx := context.Background()
+
 	_, thisFile, _, _ := runtime.Caller(0)
-	migrations := filepath.Clean(filepath.Join(filepath.Dir(thisFile), "..", "..", "migrations"))
-	sql, err := os.ReadFile(filepath.Join(migrations, "000001_create_outbox_messages.up.sql"))
+	dir := filepath.Clean(filepath.Join(filepath.Dir(thisFile), "..", "..", "migrations"))
+	ups, err := filepath.Glob(filepath.Join(dir, "*.up.sql"))
 	require.NoError(t, err)
+	require.NotEmpty(t, ups, "no migrations found in %s", dir)
+	sort.Strings(ups)
 
 	conn, err := p.Acquire(ctx)
 	require.NoError(t, err)
 	defer conn.Release()
-	_, err = conn.Conn().PgConn().Exec(ctx, string(sql)).ReadAll()
-	require.NoError(t, err)
 
-	return p
+	for _, up := range ups {
+		sql, err := os.ReadFile(up)
+		require.NoError(t, err)
+		_, err = conn.Conn().PgConn().Exec(ctx, string(sql)).ReadAll()
+		require.NoError(t, err, "applying %s", filepath.Base(up))
+	}
 }
 
-func enqueue(t *testing.T, p *pgxpool.Pool, n int) {
+// enqueueEvents writes n valid EventCreated rows, each in its own transaction.
+func enqueueEvents(t *testing.T, p *pgxpool.Pool, n int) {
 	t.Helper()
 	ctx := context.Background()
-	for i := range n {
+	for range n {
+		messageID := uuid.New()
+		evt := events.EventCreated{
+			MessageID:  messageID,
+			ID:         uuid.New(),
+			Name:       "Summer Gala",
+			Type:       "conference",
+			DoneBy:     uuid.NewString(),
+			OccurredAt: time.Now().UTC(),
+		}
 		tx, err := p.Begin(ctx)
 		require.NoError(t, err)
-		require.NoError(t, outbox.Enqueue(ctx, tx, "EventCreated", "v1",
-			map[string]any{"id": uuid.NewString(), "seq": i}))
+		require.NoError(t, outbox.Enqueue(ctx, tx, events.EventCreatedName, messageID, evt))
 		require.NoError(t, tx.Commit(ctx))
 	}
 }
 
-func unpublished(t *testing.T, p *pgxpool.Pool) int {
+// countByStatus reports how many rows sit in the given status.
+func countByStatus(t *testing.T, p *pgxpool.Pool, s outbox.Status) int {
 	t.Helper()
 	var n int
 	require.NoError(t, p.QueryRow(context.Background(),
-		`SELECT count(*) FROM outbox_messages WHERE published_at IS NULL`).Scan(&n))
+		`SELECT count(*) FROM outbox_messages WHERE status = $1`, s).Scan(&n))
 	return n
 }
 
@@ -134,49 +182,106 @@ func runFor(t *testing.T, r *relay.Relay, cond func() bool) {
 	<-done
 }
 
-func TestIntegrationRelay_DrainsAndMarksPublished(t *testing.T) {
+func TestIntegrationRelay_DrainsAndCompletes(t *testing.T) {
 	skipUnlessDocker(t)
 	p := pool(t)
-	enqueue(t, p, 3)
-	require.Equal(t, 3, unpublished(t, p))
+	enqueueEvents(t, p, 3)
+	require.Equal(t, 3, countByStatus(t, p, outbox.Queued))
 
 	pub := &fakePublisher{}
-	r := relay.New(p, pub, logger.New(false), 50*time.Millisecond, 100)
+	r := relay.New(p, eventCreatedProcessors(pub), logger.New(false), 50*time.Millisecond, 100)
 
 	runFor(t, r, func() bool { return pub.count() == 3 })
 
-	require.Equal(t, 0, unpublished(t, p), "drained rows must be stamped published_at")
+	require.Equal(t, 0, countByStatus(t, p, outbox.Queued))
+	require.Equal(t, 3, countByStatus(t, p, outbox.Completed), "drained rows must be marked COMPLETED")
 	require.Len(t, pub.sent, 3)
 
-	for _, env := range pub.sent {
-		require.Equal(t, "EventCreated", env.Name)
-		require.Equal(t, "v1", env.Version)
-		require.NotEmpty(t, env.MessageID, "subscribers deduplicate on this")
+	for _, got := range pub.sent {
+		require.Equal(t, events.RoutingKey(events.EventCreatedName), got.routingKey)
+		require.NotEmpty(t, got.messageID, "subscribers deduplicate on this")
+		require.Contains(t, string(got.body), got.messageID,
+			"the payload must carry the same message id the broker sees")
 	}
 }
 
-// A publish failure must leave the rows unpublished so the next pass retries.
-// Losing them would defeat the entire pattern.
-func TestIntegrationRelay_PublishFailureLeavesRowsForRetry(t *testing.T) {
+// A publish failure must leave the rows queued so a later pass retries. Losing
+// them would defeat the entire pattern.
+func TestIntegrationRelay_PublishFailureRequeuesForRetry(t *testing.T) {
 	skipUnlessDocker(t)
 	p := pool(t)
-	enqueue(t, p, 3)
+	enqueueEvents(t, p, 3)
 
+	// Poll slowly enough that the brief outage below cannot spend all
+	// MaxAttempts — attempts are consumed one per poll, with no delay between.
 	failing := &fakePublisher{err: errors.New("broker down")}
-	r := relay.New(p, failing, logger.New(false), 20*time.Millisecond, 100)
+	r := relay.New(p, eventCreatedProcessors(failing), logger.New(false), 50*time.Millisecond, 100)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Millisecond)
 	defer cancel()
 	_ = r.Run(ctx)
 
-	require.Equal(t, 3, unpublished(t, p), "nothing may be marked published when the broker rejects")
+	require.Equal(t, 0, countByStatus(t, p, outbox.Completed),
+		"nothing may be marked completed when the broker rejects")
+	require.Equal(t, 3, countByStatus(t, p, outbox.Queued))
+	require.Equal(t, 0, countByStatus(t, p, outbox.Exceeded))
 
 	// Once the broker recovers, the same rows drain.
-	recovered := &fakePublisher{}
-	r2 := relay.New(p, recovered, logger.New(false), 20*time.Millisecond, 100)
-	runFor(t, r2, func() bool { return recovered.count() == 3 })
+	failing.recover()
+	r2 := relay.New(p, eventCreatedProcessors(failing), logger.New(false), 20*time.Millisecond, 100)
+	runFor(t, r2, func() bool { return failing.count() == 3 })
 
-	require.Equal(t, 0, unpublished(t, p))
+	require.Equal(t, 3, countByStatus(t, p, outbox.Completed))
+}
+
+// A message that keeps failing eventually stops being retried, rather than
+// looping forever behind a broker that will never accept it.
+//
+// Note the coupling this asserts: attempts are spent one per poll, with no
+// delay. A relay polling every 10ms exceeds a message in 100ms of downtime.
+func TestIntegrationRelay_ExhaustedRetriesStopTheMessage(t *testing.T) {
+	skipUnlessDocker(t)
+	p := pool(t)
+	enqueueEvents(t, p, 1)
+
+	failing := &fakePublisher{err: errors.New("broker down")}
+	r := relay.New(p, eventCreatedProcessors(failing), logger.New(false), 10*time.Millisecond, 100)
+
+	runFor(t, r, func() bool { return countByStatus(t, p, outbox.Exceeded) == 1 })
+
+	require.Equal(t, 0, countByStatus(t, p, outbox.Queued), "an exceeded message is never claimed again")
+	require.Equal(t, 0, failing.count())
+
+	var attempts int32
+	require.NoError(t, p.QueryRow(context.Background(),
+		`SELECT attempts FROM outbox_messages`).Scan(&attempts))
+	require.Equal(t, int32(outbox.MaxAttempts), attempts)
+}
+
+// An event no processor claims can never succeed. Retrying it burns attempts
+// and holds up the queue, so it is taken out of circulation immediately.
+func TestIntegrationRelay_UnclaimedEventIsPoisoned(t *testing.T) {
+	skipUnlessDocker(t)
+	p := pool(t)
+	ctx := context.Background()
+
+	tx, err := p.Begin(ctx)
+	require.NoError(t, err)
+	require.NoError(t, outbox.Enqueue(ctx, tx, "NobodyHandlesThis", uuid.New(),
+		map[string]any{"id": uuid.NewString()}))
+	require.NoError(t, tx.Commit(ctx))
+
+	pub := &fakePublisher{}
+	r := relay.New(p, eventCreatedProcessors(pub), logger.New(false), 20*time.Millisecond, 100)
+
+	runFor(t, r, func() bool { return countByStatus(t, p, outbox.Poisoned) == 1 })
+
+	require.Equal(t, 0, pub.count(), "an unclaimed message must never be published")
+	require.Equal(t, 0, countByStatus(t, p, outbox.Queued))
+
+	var attempts int32
+	require.NoError(t, p.QueryRow(ctx, `SELECT attempts FROM outbox_messages`).Scan(&attempts))
+	require.Equal(t, int32(0), attempts, "poisoning is not a failed attempt; retrying cannot help")
 }
 
 // Enqueue must join the caller's transaction. If it did not, a rolled-back
@@ -189,8 +294,10 @@ func TestIntegrationEnqueue_RollsBackWithTheCallersTransaction(t *testing.T) {
 
 	tx, err := p.Begin(ctx)
 	require.NoError(t, err)
-	require.NoError(t, outbox.Enqueue(ctx, tx, "EventCreated", "v1", map[string]any{"id": uuid.NewString()}))
+	require.NoError(t, outbox.Enqueue(ctx, tx, events.EventCreatedName, uuid.New(),
+		events.EventCreated{MessageID: uuid.New()}))
 	require.NoError(t, tx.Rollback(ctx))
 
-	require.Equal(t, 0, unpublished(t, p), "a rolled-back transaction must leave no outbox row")
+	require.Equal(t, 0, countByStatus(t, p, outbox.Queued),
+		"a rolled-back transaction must leave no outbox row")
 }

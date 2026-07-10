@@ -3,6 +3,7 @@ module eventify/platform
 go 1.24.2
 
 require (
+	github.com/ThreeDotsLabs/watermill v1.3.7
 	github.com/ThreeDotsLabs/watermill-amqp/v2 v2.1.3
 	github.com/golang/mock v1.6.0
 	github.com/google/uuid v1.6.0
@@ -14,7 +15,6 @@ require (
 )
 
 require (
-	github.com/ThreeDotsLabs/watermill v1.3.7 // indirect
 	github.com/cenkalti/backoff/v3 v3.2.2 // indirect
 	github.com/cenkalti/backoff/v4 v4.2.1 // indirect
 	github.com/go-logr/logr v1.4.3 // indirect

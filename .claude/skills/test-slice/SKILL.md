@@ -14,8 +14,9 @@ The rule is mechanical: **does this code contain a SQL string?**
 | `api/internal/features/**` | Integration, testcontainers | Holds raw SQL. A mock cannot tell you the query is valid, hits an index, or matches the schema. |
 | `api/internal/transport/**` | Unit | Decode/encode/status mapping. Inject a handler func. |
 | `subscribers/internal/handler/**` | Integration | Holds raw SQL. Also assert idempotency. |
-| `outbox/relay` | Integration, with a fake `relay.Publisher` | The publisher is faked; the database is real, because the relay's whole job is `FOR UPDATE SKIP LOCKED` inside a transaction. |
-| `outbox.Enqueue`, `FetchUnpublished` | Integration | Holds raw SQL, and `FOR UPDATE SKIP LOCKED` cannot be mocked. |
+| `outbox/relay`, `outbox/processors` | Integration, with a fake `processors.Publisher` | The publisher is faked; the database is real, because the relay's whole job is `FOR UPDATE SKIP LOCKED` inside a transaction. |
+| `outbox.Enqueue`, `FetchQueued`, `Message` transitions | Integration | Holds raw SQL, and `FOR UPDATE SKIP LOCKED` cannot be mocked. |
+| Documented operational SQL | Integration | A runbook nobody executes is a guess. See `recovery_test.go`. |
 | `platform/**`, `handler.Registry` | Unit | Pure. |
 
 Name integration tests `TestIntegration…`: `make test-integration` selects them with `-run Integration`.
@@ -26,7 +27,7 @@ A test that cannot fail is documentation, not verification. Before you trust a n
 
 ```bash
 # remove `ON CONFLICT (message_id) DO NOTHING`, then:
-go test -run TestIntegrationEventCreatedV1_IsIdempotentOnMessageID ./tests/...
+go test -run TestIntegrationEventCreated_IsIdempotentOnMessageID ./tests/...
 # expect: FAIL ... duplicate key value violates unique constraint
 ```
 
@@ -93,39 +94,61 @@ Assert the **mapping**, not the SQL. Cover: malformed path param → 400; malfor
 
 ## Integration test: a subscriber handler
 
-Dispatch the same envelope twice. This is the test that catches non-idempotent consumers, and nothing else will.
+Dispatch the same payload twice. This is the test that catches non-idempotent consumers, and nothing else will.
+
+`Handle` takes raw bytes — there is no envelope. The routing key the message arrived on identifies the contract, and the subscriber closes over it per subscription.
 
 ```go
-func TestIntegration_EventCreatedV1_Idempotent(t *testing.T) {
-	if testing.Short() { t.Skip("requires docker") }
-	pool := setupPostgres(t)
-	h := handler.NewEventCreatedV1(pool, logger.New(false))
+func TestIntegrationEventCreated_IsIdempotentOnMessageID(t *testing.T) {
+	testsupport.SkipUnlessDocker(t)
+	pool := testsupport.Pool(t)
+	h := handler.NewEventCreated(pool, logger.New(false))
 
-	env := envelopeFor(t, eventcreatedv1.EventCreated{ID: uuid.NewString()})
+	messageID := uuid.New()
+	body, err := json.Marshal(events.EventCreated{MessageID: messageID, ID: uuid.New()})
+	require.NoError(t, err)
 
-	require.NoError(t, h.Handle(ctx, env))
-	require.NoError(t, h.Handle(ctx, env))   // redelivery
+	require.NoError(t, h.Handle(ctx, body))
+	require.NoError(t, h.Handle(ctx, body))   // redelivery
 
 	var n int
-	pool.QueryRow(ctx, `SELECT count(*) FROM analytics_events WHERE message_id=$1`, env.MessageID).Scan(&n)
+	pool.QueryRow(ctx, `SELECT count(*) FROM analytics_events WHERE message_id=$1`, messageID).Scan(&n)
 	require.Equal(t, 1, n)
 }
 ```
 
-## Unit test: the relay
+## Integration test: the relay
+
+The relay is integration-tested, not unit-tested: it exists to drive `FOR UPDATE SKIP LOCKED` inside a transaction, and that cannot be faked. Fake only the publisher.
 
 ```go
 type fakePublisher struct {
-	sent []events.Envelope
+	sent []published
 	err  error
+	mu   sync.Mutex
 }
-func (f *fakePublisher) Publish(_ context.Context, _ string, e events.Envelope) error {
+
+func (f *fakePublisher) Publish(_ context.Context, routingKey, messageID string, body []byte) error {
+	f.mu.Lock(); defer f.mu.Unlock()
 	if f.err != nil { return f.err }
-	f.sent = append(f.sent, e); return nil
+	f.sent = append(f.sent, published{routingKey, messageID, body})
+	return nil
 }
 ```
 
-Cover: a publish failure mid-batch commits the rows already published and leaves the rest unpublished for retry.
+Cover the whole lifecycle, not just the happy path:
+
+- a batch drains and every row lands `COMPLETED`;
+- a publish failure leaves rows `QUEUED` and they drain once the broker recovers;
+- repeated failure reaches `EXCEEDED` after `MaxAttempts`, and is never claimed again;
+- a payload type no processor claims is `POISONED` without spending an attempt;
+- `Enqueue` rolls back with the caller's transaction.
+
+## Integration test: documented operational SQL
+
+If a doc tells an operator to run a query, a test runs that query verbatim. `outbox/tests/integration/recovery_test.go` drives a message to `EXCEEDED` and another to `POISONED`, executes the recovery `UPDATE` copied from the `outbox` package doc, and asserts both return to `QUEUED` and then publish.
+
+A runbook that has never been executed is a guess. Renumber a status constant and that test goes red — which is the only reason to trust the runbook at all.
 
 ## Conventions
 
@@ -137,7 +160,9 @@ Cover: a publish failure mid-batch commits the rows already published and leaves
 ## Checklist
 
 - [ ] Code holds a SQL string → integration test, not a mock
-- [ ] Integration tests guarded by `testing.Short()`
+- [ ] Integration tests guarded by `testing.Short()` / `testsupport.SkipUnlessDocker(t)`
 - [ ] Subscriber test dispatches the same `MessageID` twice
+- [ ] Relay test covers `COMPLETED`, `QUEUED` retry, `EXCEEDED`, and `POISONED`
+- [ ] Operational SQL quoted in a doc is executed verbatim by a test
 - [ ] Adapter test asserts status mapping for every `apperrors.Kind` it can return
-- [ ] `make check` passes
+- [ ] `make check` passes, and each module builds alone with `GOWORK=off go build ./...`
