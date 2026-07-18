@@ -1,0 +1,78 @@
+type Event {
+  id: ID!
+  name: String!
+  description: String!
+  date: String!
+  location: String!
+  organizer: String!
+  category: String!
+  tags: [String!]!
+  capacity: Int!
+  createdBy: String!
+  createdAt: String!
+  updatedAt: String
+  creator: User
+}
+
+type User {
+  id: ID!
+  email: String!
+  firstName: String!
+  lastName: String!
+  createdAt: String!
+  updatedAt: String
+}
+
+input CreateEventInput {
+  name: String!
+  description: String!
+  date: String!
+  location: String!
+  organizer: String!
+  category: String!
+  tags: [String!]!
+  capacity: Int!
+}
+
+input UpdateEventInput {
+  name: String
+  description: String
+  date: String
+  location: String
+  organizer: String
+  category: String
+  tags: [String!]
+  capacity: Int
+}
+
+type CreateEventResponse {
+  eventId: String!
+  message: String!
+}
+
+type UpdateEventResponse {
+  event: Event!
+  message: String!
+}
+
+type DeleteEventResponse {
+  message: String!
+}
+
+type ListEventsResponse {
+  events: [Event!]!
+  total: Int!
+  page: Int!
+  limit: Int!
+}
+
+type Query {
+  event(id: ID!): Event
+  events(page: Int = 1, limit: Int = 10): ListEventsResponse!
+}
+
+type Mutation {
+  createEvent(input: CreateEventInput!): CreateEventResponse!
+  updateEvent(id: ID!, input: UpdateEventInput!): UpdateEventResponse!
+  deleteEvent(id: ID!): DeleteEventResponse!
+}
